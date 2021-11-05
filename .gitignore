@@ -1,0 +1,49 @@
+# cmake
+CMakeFiles/
+.cmake/
+*.dir/
+*.tlog/
+CMakeCache.txt
+cmake_install.cmake
+*.recipe
+
+# make
+Makefile
+
+# VS
+*.vcxproj*
+*.sln
+.vs/
+
+# VS Code
+.vscode/
+
+# Shaders
+*.dxbc
+*.dxil
+*.spirv
+*.dxbc.h
+*.dxil.h
+*.spirv.h
+
+# Library
+*.lib
+*.exp
+*.dll
+*.pdb
+*.so
+*.so.*
+*.manifest
+
+# ninja
+.ninja_deps
+.ninja_log
+build.ninja
+compile_commands.json
+*.log
+
+# external packages
+External/Assimp
+External/Detex
+External/Glfw
+External/ImGui
