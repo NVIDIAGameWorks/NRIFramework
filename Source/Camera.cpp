@@ -92,8 +92,9 @@ void Camera::Update(const CameraDesc& desc, uint32_t frameIndex)
     // Projection
     if(desc.orthoRange > 0.0f)
     {
-        float r = desc.orthoRange * Saturate( desc.horizontalFov / 180.0f );
-        state.mViewToClip.SetupByOrthoProjection(-r, r, -r / desc.aspectRatio, r / desc.aspectRatio, desc.nearZ, desc.farZ);
+        float x = desc.orthoRange;
+        float y = desc.orthoRange / desc.aspectRatio;
+        state.mViewToClip.SetupByOrthoProjection(-x, x, -y, y, desc.nearZ, desc.farZ, projFlags);
     }
     else
     {
@@ -119,7 +120,7 @@ void Camera::Update(const CameraDesc& desc, uint32_t frameIndex)
 
     uint32_t flags = 0;
     DecomposeProjection(NDC_D3D, NDC_D3D, state.mViewToClip, &flags, nullptr, nullptr, state.frustum.pv, nullptr, nullptr);
-    m_IsOrtho = ( flags & PROJ_ORTHO ) == 0 ? 0.0f : ( ( flags & PROJ_LEFT_HANDED ) ? 1.0f : -1.0f );
+    m_IsOrtho = ( flags & PROJ_ORTHO ) == 0 ? 0.0f : -1.0f;
 
     // Previous other
     statePrev.mWorldToClip = statePrev.mViewToClip * statePrev.mWorldToView;
