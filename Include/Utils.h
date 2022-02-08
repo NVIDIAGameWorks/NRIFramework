@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2021, NVIDIA CORPORATION. All rights reserved.
+Copyright (c) 2022, NVIDIA CORPORATION. All rights reserved.
 
 NVIDIA CORPORATION and its licensors retain all intellectual property
 and proprietary rights in and to this software, related documentation
@@ -44,7 +44,6 @@ namespace utils
         Black,
         FlatNormal,
         ScramblingRanking1spp,
-        ScramblingRanking32spp,
         SobolSequence
     };
 
@@ -205,7 +204,6 @@ namespace utils
     struct Primitive
     {
         float worldToUvUnits;
-        uint32_t normal; // 10 10 10 2 unorm (.w - handedness)
     };
 
     struct AnimationNode

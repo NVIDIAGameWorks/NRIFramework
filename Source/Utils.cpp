@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2021, NVIDIA CORPORATION. All rights reserved.
+Copyright (c) 2022, NVIDIA CORPORATION. All rights reserved.
 
 NVIDIA CORPORATION and its licensors retain all intellectual property
 and proprietary rights in and to this software, related documentation
@@ -837,7 +837,6 @@ bool utils::LoadScene(const std::string& path, Scene& scene, bool simpleOIT, con
             float3 edge10 = p1 - p0;
             float3 triangleNormal = Cross(edge20, edge10);
             float worldArea = Max( Length(triangleNormal), 1e-9f );
-            triangleNormal /= worldArea;
 
             float3 uvEdge20 = float3(v2.uv[0], v2.uv[1], 0.0f) - float3(v0.uv[0], v0.uv[1], 0.0f);
             float3 uvEdge10 = float3(v1.uv[0], v1.uv[1], 0.0f) - float3(v0.uv[0], v0.uv[1], 0.0f);
@@ -845,7 +844,6 @@ bool utils::LoadScene(const std::string& path, Scene& scene, bool simpleOIT, con
 
             Primitive& primitive = scene.primitives[primitiveIndex];
             primitive.worldToUvUnits = uvArea == 0 ? 1.0f : Sqrt( uvArea / worldArea );
-            primitive.normal = Packed::uf4_to_uint<10, 10, 10, 2>(triangleNormal * 0.5f + 0.5f);
         }
 
         // Scene AABB
@@ -913,15 +911,6 @@ bool utils::LoadScene(const std::string& path, Scene& scene, bool simpleOIT, con
     {
         Texture* texture = new Texture;
         const std::string& texPath = GetFullPath("scrambling_ranking_128x128_2d_1spp.png", DataFolder::TEXTURES);
-        NRI_ABORT_ON_FALSE( LoadTexture(texPath, *texture) );
-        texture->OverrideFormat(nri::Format::RGBA8_UINT);
-        scene.textures.push_back(texture);
-    }
-
-    // StaticTexture::ScramblingRanking32spp
-    {
-        Texture* texture = new Texture;
-        const std::string& texPath = GetFullPath("scrambling_ranking_128x128_2d_32spp.png", DataFolder::TEXTURES);
         NRI_ABORT_ON_FALSE( LoadTexture(texPath, *texture) );
         texture->OverrideFormat(nri::Format::RGBA8_UINT);
         scene.textures.push_back(texture);
