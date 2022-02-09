@@ -5,7 +5,7 @@
 
 #if defined(_WIN32)
     #include <windows.h>
-#elif defined(__linux__)
+#elif defined(__linux__) || defined(__SCE__)
     #include <time.h>
     #ifdef USE_MONOTONIC_TIMER
         constexpr clockid_t CLOCKID = CLOCK_MONOTONIC;
@@ -16,13 +16,13 @@
     #error "Undefined platform"
 #endif
 
-inline uint64_t GetTicks()
+inline uint64_t _GetTicks()
 {
 #if defined(_WIN32)
     uint64_t ticks;
     QueryPerformanceCounter((LARGE_INTEGER*)&ticks);
     return ticks;
-#elif defined(__linux__)
+#elif defined(__linux__) || defined(__SCE__)
     struct timespec spec;
     int res = clock_gettime(CLOCKID, &spec);
     assert(res == 0);
@@ -34,11 +34,10 @@ Timer::Timer()
 {
 #if defined(_WIN32)
     uint64_t ticksPerSecond = 1;
-    BOOL res = QueryPerformanceFrequency((LARGE_INTEGER*)&ticksPerSecond);
-    assert(res == TRUE);
+    QueryPerformanceFrequency((LARGE_INTEGER*)&ticksPerSecond);
 
     m_InvTicksPerMs = 1000.0 / ticksPerSecond;
-#elif defined(__linux__)
+#elif defined(__linux__) || defined(__SCE__)
     m_InvTicksPerMs = 1.0 / 1000000.0;
 #endif
 
@@ -47,12 +46,12 @@ Timer::Timer()
 
 double Timer::GetTimeStamp()
 {
-    return GetTicks() * m_InvTicksPerMs;
+    return _GetTicks() * m_InvTicksPerMs;
 }
 
 void Timer::UpdateElapsedTimeSinceLastSave()
 {
-    double ms = (GetTicks() - m_Time) * m_InvTicksPerMs;
+    double ms = (_GetTicks() - m_Time) * m_InvTicksPerMs;
     m_Delta = float(ms);
 
     float relativeDelta = std::abs(m_Delta - m_SmoothedDelta) / (std::min(m_Delta, m_SmoothedDelta) + 1e-7f);
@@ -64,5 +63,5 @@ void Timer::UpdateElapsedTimeSinceLastSave()
 
 void Timer::SaveCurrentTime()
 {
-    m_Time = GetTicks();
+    m_Time = _GetTicks();
 }
