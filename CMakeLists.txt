@@ -1,5 +1,7 @@
 cmake_minimum_required(VERSION 3.15)
 
+message("Processing 'NRI Framework'...")
+
 # Options:
 #set(NRIF_OUTPUT_PATH "my/output/")
 
