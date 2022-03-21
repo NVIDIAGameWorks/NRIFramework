@@ -202,6 +202,9 @@ public:
     inline uint16_t GetWindowHeight() const
     { return (uint16_t)m_WindowHeight; }
 
+    inline uint32_t GetFrameNum() const
+    { return m_FrameNum; }
+
     const nri::Window& GetWindow() const;
     nri::WindowSystemType GetWindowSystemType() const;
 

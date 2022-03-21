@@ -18,22 +18,13 @@ Makefile
 # VS Code
 .vscode/
 
-# Shaders
+# shaders
 *.dxbc
 *.dxil
 *.spirv
 *.dxbc.h
 *.dxil.h
 *.spirv.h
-
-# Library
-*.lib
-*.exp
-*.dll
-*.pdb
-*.so
-*.so.*
-*.manifest
 
 # ninja
 .ninja_deps
@@ -42,8 +33,22 @@ build.ninja
 compile_commands.json
 *.log
 
+# library
+*.lib
+*.exp
+*.dll
+*.ilk
+*.pdb
+*.so
+*.so.*
+*.manifest
+
 # external packages
-External/Assimp
-External/Detex
-External/Glfw
-External/ImGui
+External/Assimp/
+External/Detex/
+External/Glfw/
+External/ImGui/
+
+# generated folders
+_Build/
+_Compiler/

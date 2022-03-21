@@ -25,8 +25,6 @@ license agreement from NVIDIA CORPORATION is strictly prohibited.
 #include "NRI.h"
 #include "Utils.h"
 
-constexpr char NRI_DATA_DIR[] = "_Data";
-
 constexpr std::array<aiTextureType, 5> gSupportedTextureTypes =
 {
     aiTextureType_DIFFUSE,      // OBJ - map_Kd
@@ -242,15 +240,15 @@ const char* utils::GetFileName(const std::string& path)
 
 std::string utils::GetFullPath(const std::string& localPath, DataFolder dataFolder)
 {
-    std::string path = std::string(NRI_DATA_DIR) + "/";
+    std::string path = "_Data/"; // it's a symbolic link
     if (dataFolder == DataFolder::SHADERS)
-        path += "Shaders/";
+        path = "_Shaders/"; // special folder with generated files
     else if (dataFolder == DataFolder::TEXTURES)
         path += "Textures/";
     else if (dataFolder == DataFolder::SCENES)
         path += "Scenes/";
     else if (dataFolder == DataFolder::TESTS)
-        path += "Tests/";
+        path = "Tests/"; // special folder stored in Git
 
     return path + localPath;
 }
