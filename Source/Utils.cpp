@@ -944,6 +944,15 @@ bool utils::LoadScene(const std::string& path, Scene& scene, bool simpleOIT, con
 
             if (assimpMaterial->GetTexture(type, 0, &str) == AI_SUCCESS)
             {
+#if !(_WIN32)
+                // In order to import .fbx textures on Linux
+                for (char* it = str.data; it != str.data + str.length; ++it)
+                {
+                    if (*it == '\\')
+                        *it = '/';
+                }
+#endif
+                
                 std::string texPath = baseDir + str.data;
                 const uint64_t hash = ComputeHash(texPath.c_str(), (uint32_t)texPath.length());
 
