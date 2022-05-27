@@ -27,6 +27,9 @@ license agreement from NVIDIA CORPORATION is strictly prohibited.
 template<typename T> constexpr void MaybeUnused([[maybe_unused]] const T& arg)
 {}
 
+void CreateDebugAllocator(nri::MemoryAllocatorInterface& memoryAllocatorInterface);
+void DestroyDebugAllocator(nri::MemoryAllocatorInterface& memoryAllocatorInterface);
+
 constexpr std::array<const char*, (size_t)nri::GraphicsAPI::MAX_NUM> g_GraphicsAPI =
 {
     "D3D11",
@@ -147,9 +150,21 @@ static void GLFW_ScrollCallback(GLFWwindow* window, double xoffset, double yoffs
 // SAMPLE BASE
 //==================================================================================================================================================
 
+SampleBase::SampleBase()
+{
+#if _DEBUG
+    CreateDebugAllocator(m_MemoryAllocatorInterface);
+#endif
+}
+
 SampleBase::~SampleBase()
 {
     glfwTerminate();
+
+#if _DEBUG
+    if (m_MemoryAllocatorInterface.userArg != nullptr)
+        DestroyDebugAllocator(m_MemoryAllocatorInterface);
+#endif
 }
 
 nri::WindowSystemType SampleBase::GetWindowSystemType() const
@@ -184,8 +199,8 @@ void SampleBase::GetCameraDescFromInputDevices(CameraDesc& cameraDesc)
     float motionScale = m_Camera.state.motionScale;
 
     float2 mouseDelta = GetMouseDelta();
-    cameraDesc.dYaw = -mouseDelta.x;
-    cameraDesc.dPitch = -mouseDelta.y;
+    cameraDesc.dYaw = -mouseDelta.x * m_MouseSensitivity;
+    cameraDesc.dPitch = -mouseDelta.y * m_MouseSensitivity;
 
     if (IsKeyPressed(Key::Right))
         cameraDesc.dYaw -= motionScale;
@@ -578,8 +593,8 @@ void SampleBase::RenderUserInterface(nri::CommandBuffer& commandBuffer)
     // Prepare
     uint32_t vertexDataSize = drawData.TotalVtxCount * sizeof(ImDrawVert);
     uint32_t indexDataSize = drawData.TotalIdxCount * sizeof(ImDrawIdx);
-    uint32_t vertexDataSizeAligned = helper::GetAlignedSize(vertexDataSize, 16);
-    uint32_t indexDataSizeAligned = helper::GetAlignedSize(indexDataSize, 16);
+    uint32_t vertexDataSizeAligned = helper::Align(vertexDataSize, 16);
+    uint32_t indexDataSizeAligned = helper::Align(indexDataSize, 16);
     uint32_t totalDataSizeAligned = vertexDataSizeAligned + indexDataSizeAligned;
     if (!totalDataSizeAligned)
         return;
@@ -615,7 +630,7 @@ void SampleBase::RenderUserInterface(nri::CommandBuffer& commandBuffer)
     invScreenSize[1] = 1.0f / ImGui::GetIO().DisplaySize.y;
 
     {
-        helper::Annotation(*NRI, commandBuffer, "UserInterface");
+        helper::Annotation annotation(*NRI, commandBuffer, "UserInterface");
 
         NRI->CmdSetDescriptorPool(commandBuffer, *m_DescriptorPool);
         NRI->CmdSetPipelineLayout(commandBuffer, *m_PipelineLayout);

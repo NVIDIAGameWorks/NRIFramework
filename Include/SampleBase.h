@@ -171,8 +171,7 @@ struct BackBuffer
 class SampleBase
 {
 public:
-    SampleBase()
-    {}
+    SampleBase();
 
     virtual ~SampleBase();
 
@@ -231,6 +230,8 @@ protected:
     bool m_TestMode = false;
     std::string m_SceneFile = "ShaderBalls/ShaderBalls.obj";
     uint32_t m_DlssQuality = uint32_t(-1);
+    nri::MemoryAllocatorInterface m_MemoryAllocatorInterface = {};
+    float m_MouseSensitivity = 1.0f;
 
     // Private
 private:

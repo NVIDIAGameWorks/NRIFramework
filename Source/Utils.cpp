@@ -789,12 +789,18 @@ bool utils::LoadScene(const std::string& path, Scene& scene, bool simpleOIT, con
             mesh.aabb.Add(position);
 
             float3 normal = -float3(&aiMesh.mNormals[j].x); // TODO: why negated?
+            if( All<CmpLess>(Abs(normal), 1e-6f) )
+                normal = float3(0.0f, 0.0f, 1.0f); // zero vector
+
             unpackedVertex.normal[0] = normal.x;
             unpackedVertex.normal[1] = normal.y;
             unpackedVertex.normal[2] = normal.z;
             vertex.normal = Packed::uf4_to_uint<10, 10, 10, 2>(normal * 0.5f + 0.5f);
 
             float4 tangent = tangents[j];
+            if( All<CmpLess>(Abs(float3(tangent.xmm)), 1e-6f) )
+                tangent = float4(0.0f, 0.0f, 1.0f, 1.0f); // zero vector
+
             unpackedVertex.tangent[0] = tangent.x;
             unpackedVertex.tangent[1] = tangent.y;
             unpackedVertex.tangent[2] = tangent.z;
@@ -1125,7 +1131,7 @@ void utils::Scene::Animate(float animationSpeed, float elapsedTime, float& anima
     float normalizedTime = animationProgress * 0.01f;
     normalizedTime += elapsedTime * sceneAnimationDelta * selectedAnimation.sign;
     if (normalizedTime >= 1.0f || normalizedTime < 0.0f)
-{
+    {
         selectedAnimation.sign = -selectedAnimation.sign;
         normalizedTime = Saturate(normalizedTime);
     }

@@ -105,10 +105,10 @@ namespace utils
         { return mipNum; }
 
         inline uint16_t GetWidth() const
-        { return helper::GetAlignedSize(width, IsBlockCompressed() ? 4 : 1); }
+        { return width; }
 
         inline uint16_t GetHeight() const
-        { return helper::GetAlignedSize(height, IsBlockCompressed() ? 4 : 1); }
+        { return height; }
 
         inline uint16_t GetDepth() const
         { return depth; }
@@ -118,14 +118,15 @@ namespace utils
 
         void GetSubresource(nri::TextureSubresourceUploadDesc& subresource, uint32_t mipIndex, uint32_t arrayIndex = 0) const
         {
-            // TODO: 3D images are not supported, "subresource.slices" needs to be allocated to store pointers to all slices of current mipmap
+            // TODO: 3D images are not supported, "subresource.slices" needs to be allocated to store pointers to all slices of the current mipmap
             assert(GetDepth() == 1);
             PLATFORM_UNUSED(arrayIndex);
 
-            subresource.slices = texture[mipIndex]->data;
-            subresource.sliceNum = 1;
             int rowPitch, slicePitch;
             detexComputePitch(texture[mipIndex]->format, texture[mipIndex]->width, texture[mipIndex]->height, &rowPitch, &slicePitch);
+
+            subresource.slices = texture[mipIndex]->data;
+            subresource.sliceNum = 1;
             subresource.rowPitch = (uint32_t)rowPitch;
             subresource.slicePitch = (uint32_t)slicePitch;
         }

@@ -20,8 +20,8 @@ namespace nri
 
 namespace helper
 {
-    template<typename T, typename A> constexpr T GetAlignedSize(const T& size, A alignment)
-    { return T(((size + alignment - 1) / alignment) * alignment); }
+    template<typename T, typename A> constexpr T Align(T x, A alignment)
+    { return (T)((size_t(x) + (size_t)alignment - 1) & ~((size_t)alignment - 1)); }
 
     template <typename T, uint32_t N> constexpr uint32_t GetCountOf(T const (&)[N])
     { return N; }
