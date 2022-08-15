@@ -847,10 +847,6 @@ void SampleBase::ParseCommandLine(int32_t argc, char** argv)
         m_IgnoreDPI = true;
     CLARG_END;
 
-    CLARG_START(argv, argc, "--testMode", false)
-        m_TestMode = true;
-    CLARG_END;
-
     CLARG_START(argv, argc, "--swapInterval=", false)
         m_SwapInterval = CLARG_TO_UINT;
     CLARG_END;

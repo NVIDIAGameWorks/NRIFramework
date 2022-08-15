@@ -1147,9 +1147,22 @@ void utils::Scene::Animate(float animationSpeed, float elapsedTime, float& anima
         float4x4 transform;
         selectedAnimation.cameraNode.Animate(*this, selectedAnimation.animationNodes, float4x4::Identity(), &transform);
 
-        float4x4 m = mSceneToWorld * transform;
-        m.Transpose();
+        // Inverse 3x3 rotation (without scene-to-world rotation)
+        float3 pos = transform.GetCol3().xmm;
+        transform.SetTranslation( float3::Zero() );
+        transform.Transpose();
+        transform.SetTranslation(pos);
 
-        *outCameraTransform = mSceneToWorld * m; // = [mSceneToWorld * transform * (mSceneToWorld)T]T
+        // Transpose
+        transform.Transpose();
+
+        // Apply scene-to-world rotation
+        float4x4 sceneToWorldT = mSceneToWorld;
+        sceneToWorldT.Transpose();
+
+        float4x4 finalTransform = mSceneToWorld * (transform * sceneToWorldT);
+
+        // Result
+        *outCameraTransform = finalTransform;
     }
 }

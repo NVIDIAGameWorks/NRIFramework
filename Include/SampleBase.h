@@ -227,7 +227,6 @@ protected:
     bool m_DebugNRI = false;
     bool m_IgnoreDPI = false;
     bool m_IsActive = true;
-    bool m_TestMode = false;
     std::string m_SceneFile = "ShaderBalls/ShaderBalls.obj";
     uint32_t m_DlssQuality = uint32_t(-1);
     nri::MemoryAllocatorInterface m_MemoryAllocatorInterface = {};
