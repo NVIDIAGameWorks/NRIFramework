@@ -205,6 +205,7 @@ namespace utils
     struct Primitive
     {
         float worldToUvUnits;
+        float curvature;
     };
 
     struct AnimationNode

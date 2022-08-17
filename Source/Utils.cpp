@@ -71,66 +71,67 @@ inline bool EndsWithNoCase(std::string const &value, std::string const &ending)
 
 static void GenerateTangents(const aiMesh& mesh, std::vector<float4>& tangents)
 {
-    const aiVector3D zeroUv(0.0f, 0.0f, 0.0f);
-    float3* tan1 = (float3*)&tangents[0];
-    float3* tan2 = tan1 + mesh.mNumVertices;
-    const bool hasTexCoord0 = mesh.HasTextureCoords(0);
+    std::vector<float3> tan1(mesh.mNumVertices, float3::Zero());
+    std::vector<float3> tan2(mesh.mNumVertices, float3::Zero());
 
-    std::memset(tan1, 0, sizeof(float3) * mesh.mNumVertices * 2);
+    const aiVector3D zeroUv(0.0f, 0.0f, 0.0f);
+    const bool hasTexCoord0 = mesh.HasTextureCoords(0);
 
     for (uint32_t i = 0; i < mesh.mNumFaces; i++)
     {
-        uint32_t i1 = mesh.mFaces[i].mIndices[0];
-        uint32_t i2 = mesh.mFaces[i].mIndices[1];
-        uint32_t i3 = mesh.mFaces[i].mIndices[2];
+        uint32_t i0 = mesh.mFaces[i].mIndices[0];
+        uint32_t i1 = mesh.mFaces[i].mIndices[1];
+        uint32_t i2 = mesh.mFaces[i].mIndices[2];
 
-        const aiVector3D& v1 = mesh.mVertices[i1];
-        const aiVector3D& v2 = mesh.mVertices[i2];
-        const aiVector3D& v3 = mesh.mVertices[i3];
+        float3 p0 = float3(&mesh.mVertices[i0].x);
+        float3 p1 = float3(&mesh.mVertices[i1].x);
+        float3 p2 = float3(&mesh.mVertices[i2].x);
 
-        const aiVector3D& w1 = hasTexCoord0 ? mesh.mTextureCoords[0][i1] : zeroUv;
-        const aiVector3D& w2 = hasTexCoord0 ? mesh.mTextureCoords[0][i2] : zeroUv;
-        const aiVector3D& w3 = hasTexCoord0 ? mesh.mTextureCoords[0][i3] : zeroUv;
+        float3 n0 = float3(&mesh.mNormals[i0].x);
+        float3 n1 = float3(&mesh.mNormals[i1].x);
+        float3 n2 = float3(&mesh.mNormals[i2].x);
 
-        float s1 = w2.x - w1.x;
-        float s2 = w3.x - w1.x;
-        float t1 = w2.y - w1.y;
-        float t2 = w3.y - w1.y;
+        const aiVector3D& uv0 = hasTexCoord0 ? mesh.mTextureCoords[0][i0] : zeroUv;
+        const aiVector3D& uv1 = hasTexCoord0 ? mesh.mTextureCoords[0][i1] : zeroUv;
+        const aiVector3D& uv2 = hasTexCoord0 ? mesh.mTextureCoords[0][i2] : zeroUv;
+
+        float s1 = uv1.x - uv0.x;
+        float s2 = uv2.x - uv0.x;
+        float t1 = uv1.y - uv0.y;
+        float t2 = uv2.y - uv0.y;
         float r = s1 * t2 - s2 * t1;
 
-        float3 sdir;
-        float3 tdir;
+        float3 sdir, tdir;
 
         if (Abs(r) < 1e-9f)
         {
-            float3 N( &mesh.mNormals[i1].x );
-            N.z += 1e-6f;
-            sdir = GetPerpendicularVector(N);
-            tdir = Cross(N, sdir);
+            n1.z += 1e-6f;
+            sdir = GetPerpendicularVector(n1);
+            tdir = Cross(n1, sdir);
         }
         else
         {
             float invr = 1.0f / r;
 
-            float3 a = float3(v2.x - v1.x, v2.y - v1.y, v2.z - v1.z) * invr;
-            float3 b = float3(v3.x - v1.x, v3.y - v1.y, v3.z - v1.z) * invr;
+            float3 a = (p1 - p0) * invr;
+            float3 b = (p2 - p0) * invr;
 
             sdir = a * t2 - b * t1;
             tdir = b * s1 - a * s2;
         }
 
+        tan1[i0] += sdir;
         tan1[i1] += sdir;
         tan1[i2] += sdir;
-        tan1[i3] += sdir;
 
+        tan2[i0] += tdir;
         tan2[i1] += tdir;
         tan2[i2] += tdir;
-        tan2[i3] += tdir;
     }
 
     for (uint32_t i = 0; i < mesh.mNumVertices; i++)
     {
-        float3 n(&mesh.mNormals[i].x);
+        float3 n = float3(&mesh.mNormals[i].x);
 
         float3 t = tan1[i];
         if (t.IsZero())
@@ -745,7 +746,8 @@ bool utils::LoadScene(const std::string& path, Scene& scene, bool simpleOIT, con
     }
 
     // Geometry
-    std::vector<float4> tangents(totalVertices * 2, float4(0.0f, 0.0f, 0.0f, 0.0f));
+    std::vector<float4> tangents(totalVertices);
+
     scene.indices.resize(totalIndices);
     scene.primitives.resize(totalIndices / 3);
     scene.vertices.resize(totalVertices);
@@ -759,7 +761,7 @@ bool utils::LoadScene(const std::string& path, Scene& scene, bool simpleOIT, con
         Mesh& mesh = scene.meshes[meshOffset + i];
         mesh.aabb.Clear();
 
-        // Generate tangent basis
+        // Generate tangents
         GenerateTangents(aiMesh, tangents);
 
         // Indices
@@ -779,6 +781,7 @@ bool utils::LoadScene(const std::string& path, Scene& scene, bool simpleOIT, con
             UnpackedVertex& unpackedVertex = scene.unpackedVertices[vertexOffset];
             Vertex& vertex = scene.vertices[vertexOffset++];
 
+            // Position
             float3 position = float3(&aiMesh.mVertices[j].x);
             vertex.position[0] = position.x;
             vertex.position[1] = position.y;
@@ -788,6 +791,7 @@ bool utils::LoadScene(const std::string& path, Scene& scene, bool simpleOIT, con
             unpackedVertex.position[2] = position.z;
             mesh.aabb.Add(position);
 
+            // Normal
             float3 normal = -float3(&aiMesh.mNormals[j].x); // TODO: why negated?
             if( All<CmpLess>(Abs(normal), 1e-6f) )
                 normal = float3(0.0f, 0.0f, 1.0f); // zero vector
@@ -797,6 +801,7 @@ bool utils::LoadScene(const std::string& path, Scene& scene, bool simpleOIT, con
             unpackedVertex.normal[2] = normal.z;
             vertex.normal = Packed::uf4_to_uint<10, 10, 10, 2>(normal * 0.5f + 0.5f);
 
+            // Tangent
             float4 tangent = tangents[j];
             if( All<CmpLess>(Abs(float3(tangent.xmm)), 1e-6f) )
                 tangent = float4(0.0f, 0.0f, 1.0f, 1.0f); // zero vector
@@ -807,6 +812,7 @@ bool utils::LoadScene(const std::string& path, Scene& scene, bool simpleOIT, con
             unpackedVertex.tangent[3] = tangent.w;
             vertex.tangent = Packed::uf4_to_uint<10, 10, 10, 2>(tangent * 0.5f + 0.5f);
 
+            // Uv
             if (aiMesh.HasTextureCoords(0))
             {
                 float u = Min( aiMesh.mTextureCoords[0][j].x, 65504.0f );
@@ -839,15 +845,43 @@ bool utils::LoadScene(const std::string& path, Scene& scene, bool simpleOIT, con
 
             float3 edge20 = p2 - p0;
             float3 edge10 = p1 - p0;
-            float3 triangleNormal = Cross(edge20, edge10);
-            float worldArea = Max( Length(triangleNormal), 1e-9f );
+            float worldArea = Length( Cross(edge20, edge10) );
 
             float3 uvEdge20 = float3(v2.uv[0], v2.uv[1], 0.0f) - float3(v0.uv[0], v0.uv[1], 0.0f);
             float3 uvEdge10 = float3(v1.uv[0], v1.uv[1], 0.0f) - float3(v0.uv[0], v0.uv[1], 0.0f);
             float uvArea = Length( Cross(uvEdge20, uvEdge10) );
 
             Primitive& primitive = scene.primitives[primitiveIndex];
-            primitive.worldToUvUnits = uvArea == 0 ? 1.0f : Sqrt( uvArea / worldArea );
+            primitive.worldToUvUnits = uvArea == 0 ? 1.0f : Sqrt( uvArea / ( worldArea + 1e-9f ) );
+
+            // Unsigned curvature
+            // https://computergraphics.stackexchange.com/questions/1718/what-is-the-simplest-way-to-compute-principal-curvature-for-a-mesh-triangle
+            float3 n0 = float3(v0.normal);
+            float3 n1 = float3(v1.normal);
+            float3 n2 = float3(v2.normal);
+
+            float triArea = Length( Cross(p1 - p0, p2 - p0) ) * 0.5f;
+            float invTriArea = 1.0f / Max(triArea, 1e-9f);
+
+            #if 1
+                float curvature10 = Abs( Dot33(n1 - n0, p1 - p0) ) / LengthSquared(p1 - p0);
+                float curvature21 = Abs( Dot33(n2 - n1, p2 - p1) ) / LengthSquared(p2 - p1);
+                float curvature02 = Abs( Dot33(n0 - n2, p0 - p2) ) / LengthSquared(p0 - p2);
+            #else
+                float curvature10 = Sqrt( LengthSquared(n1 - n0) * invTriArea );
+                float curvature21 = Sqrt( LengthSquared(n2 - n1) * invTriArea );
+                float curvature02 = Sqrt( LengthSquared(n0 - n2) * invTriArea );
+            #endif
+
+            // Without sophisticated corrections "signed" curvature can be dangerous
+            #if 0
+                curvature10 *= Sign( Dot33(n1 - n0, p1 - p0) );
+                curvature21 *= Sign( Dot33(n2 - n1, p2 - p1) );
+                curvature02 *= Sign( Dot33(n0 - n2, p0 - p2) );
+            #endif
+
+            primitive.curvature = Max(curvature10, curvature21);
+            primitive.curvature = Max(primitive.curvature, curvature02);
         }
 
         // Scene AABB

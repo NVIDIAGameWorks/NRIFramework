@@ -809,8 +809,7 @@ void SampleBase::ParseCommandLine(int32_t argc, char** argv)
             "    --scene=<scene path relative to '_Data/Scenes' folder>\n"
             "    --debugAPI\n"
             "    --debugNRI\n"
-            "    --ignoreDPI\n"
-            "    --testMode\n\n"
+            "    --ignoreDPI\n\n"
          );
     CLARG_END;
 
