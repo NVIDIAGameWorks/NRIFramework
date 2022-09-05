@@ -465,7 +465,7 @@ bool utils::LoadTexture(const std::string& path, Texture& texture, bool computeA
         }
 
         // Average color
-        float4 avgColor = float4(0.0f);
+        float4 avgColor = float4::Zero();
         const size_t pixelNum = lastMip->width * lastMip->height;
         for (size_t i = 0; i < pixelNum; i++)
             avgColor += Packed::uint_to_uf4<8, 8, 8, 8>(*(uint32_t*)(rgba8 + i * 4));

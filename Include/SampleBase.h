@@ -24,10 +24,10 @@ license agreement from NVIDIA CORPORATION is strictly prohibited.
 #include "Utils.h"
 #include "Camera.h"
 
-constexpr nri::SPIRVBindingOffsets SPIRV_BINDING_OFFSETS = {100, 200, 300, 400}; // see CompileHLSL.bat
+constexpr nri::SPIRVBindingOffsets SPIRV_BINDING_OFFSETS = {100, 200, 300, 400}; // see ShaderCompilation.cmake
 constexpr bool D3D11_COMMANDBUFFER_EMULATION = false;
 constexpr uint32_t DEFAULT_MEMORY_ALIGNMENT = 16;
-constexpr uint32_t BUFFERED_FRAME_MAX_NUM = 2;
+constexpr uint32_t BUFFERED_FRAME_MAX_NUM = 3;
 constexpr uint32_t SWAP_CHAIN_TEXTURE_NUM = BUFFERED_FRAME_MAX_NUM;
 
 #undef Button4

@@ -76,7 +76,7 @@ namespace utils
     {
         detexTexture **texture = nullptr;
         std::string name;
-        float4 avgColor = float4(0.0f);
+        float4 avgColor = float4::Zero();
         uint64_t hash = 0;
         AlphaMode alphaMode = AlphaMode::OPAQUE;
         nri::Format format = nri::Format::UNKNOWN;
