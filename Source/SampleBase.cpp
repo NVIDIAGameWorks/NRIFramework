@@ -17,25 +17,11 @@ license agreement from NVIDIA CORPORATION is strictly prohibited.
 #include <array>
 #include <thread>
 
-#define CLARG_START(argv, argc, arg, condition)     { size_t argLen = helper::GetCountOf(arg) - 1; int32_t j = 0; for (; j < argc && strncmp(argv[j], arg, argLen); j++); const char* _pArg = j == argc ? nullptr : argv[j] + argLen; if (_pArg || (condition)) {
-#define CLARG_IF_VALUE(value)                       !strncmp(_pArg, value, strlen(value))
-#define CLARG_TO_UINT                               (uint32_t)atoi(_pArg)
-#define CLARG_TO_UINT64                             (uint64_t)_atoi64(_pArg)
-#define CLARG_TO_FLOAT                              (float)atof(_pArg)
-#define CLARG_END                                   }}
-
 template<typename T> constexpr void MaybeUnused([[maybe_unused]] const T& arg)
 {}
 
 void CreateDebugAllocator(nri::MemoryAllocatorInterface& memoryAllocatorInterface);
 void DestroyDebugAllocator(nri::MemoryAllocatorInterface& memoryAllocatorInterface);
-
-constexpr std::array<const char*, (size_t)nri::GraphicsAPI::MAX_NUM> g_GraphicsAPI =
-{
-    "D3D11",
-    "D3D12",
-    "VULKAN"
-};
 
 constexpr uint64_t STREAM_BUFFER_SIZE = 8 * 1024 * 1024;
 
@@ -226,22 +212,25 @@ void SampleBase::GetCameraDescFromInputDevices(CameraDesc& cameraDesc)
         cameraDesc.dLocal.y -= motionScale;
 }
 
-bool SampleBase::CreateUserInterface(nri::Device& device, const nri::CoreInterface& coreInterface, const nri::HelperInterface& helperInterface, uint32_t windowWidth, uint32_t windowHeight, nri::Format renderTargetFormat)
+bool SampleBase::CreateUserInterface(nri::Device& device, const nri::CoreInterface& coreInterface, const nri::HelperInterface& helperInterface, nri::Format renderTargetFormat)
 {
     // ImGui setup
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
     ImGui::StyleColorsDark();
 
+    float dpiScale = 1.0f + 0.75f * float(m_WindowResolution.x - m_OutputResolution.x) / float(m_OutputResolution.x);
+
     ImGuiStyle& style = ImGui::GetStyle();
     style.FrameBorderSize = 1;
     style.WindowBorderSize = 1;
+    style.ScaleAllSizes(dpiScale);
 
     ImGuiIO& io = ImGui::GetIO();
     io.BackendFlags |= ImGuiBackendFlags_HasMouseCursors; // We can honor GetMouseCursor() values (optional)
     io.BackendFlags |= ImGuiBackendFlags_HasSetMousePos; // We can honor io.WantSetMousePos requests (optional, rarely used)
     io.IniFilename = nullptr;
-    io.DisplaySize = ImVec2((float)windowWidth, (float)windowHeight);
+    io.DisplaySize = ImVec2((float)m_WindowResolution.x, (float)m_WindowResolution.y);
 
     #if defined(_WIN32)
         io.ImeWindowHandle = glfwGetWin32Window(m_Window);
@@ -387,6 +376,11 @@ bool SampleBase::CreateUserInterface(nri::Device& device, const nri::CoreInterfa
 
     int32_t fontTextureWidth = 0, fontTextureHeight = 0;
     uint8_t* fontPixels = nullptr;
+
+    ImFontConfig fontConfig = {};
+    fontConfig.SizePixels = 13.0f * dpiScale;
+    io.Fonts->AddFontDefault(&fontConfig);
+
     io.Fonts->GetTexDataAsRGBA32(&fontPixels, &fontTextureWidth, &fontTextureHeight);
 
     // Resources
@@ -673,60 +667,104 @@ void SampleBase::RenderUserInterface(nri::CommandBuffer& commandBuffer)
     }
 }
 
-bool SampleBase::Create(const char* windowTitle)
+bool SampleBase::Create(int32_t argc, char** argv, const char* windowTitle)
 {
+    // Command line
+    cmdline::parser cmdLine;
+
+    InitCmdLineDefault(cmdLine);
+    InitCmdLine(cmdLine);
+
+    bool parseStatus = cmdLine.parse(argc, argv);
+
+    if (cmdLine.exist("help"))
+    {
+        printf("\n%s", cmdLine.usage().c_str());
+        return false;
+    }
+
+    if (!parseStatus)
+    {
+        printf("\n%s\n\n%s", cmdLine.error().c_str(), cmdLine.usage().c_str());
+        return false;
+    }
+
+    ReadCmdLineDefault(cmdLine);
+    ReadCmdLine(cmdLine);
+
+    // Init GLFW
     glfwSetErrorCallback(GLFW_ErrorCallback);
 
     if (!glfwInit())
         return false;
 
-    // Screen size
+    // Window size
     GLFWmonitor* monitor = glfwGetPrimaryMonitor();
-    const GLFWvidmode* mode = glfwGetVideoMode(monitor);
-    const uint32_t screenW = (uint32_t)mode->width;
-    const uint32_t screenH = (uint32_t)mode->height;
-    if (m_WindowWidth > screenW)
-        m_WindowWidth = screenW;
-    if (m_WindowHeight > screenH)
-        m_WindowHeight = screenH;
-    int32_t decorated = (m_WindowWidth == screenW || m_WindowHeight == screenH) ? 0 : 1;
+
+    float contentScaleX = 1.0f;
+    float contentScaleY = 1.0f;
+
+    if (!m_IgnoreDPI)
+    {
+        glfwGetMonitorContentScale(monitor, &contentScaleX, &contentScaleY);
+        printf("DPI scale %.1f%%\n", contentScaleX * 100.0f);
+    }
+
+    m_WindowResolution.x = (uint32_t)Floor(m_OutputResolution.x * contentScaleX);
+    m_WindowResolution.y = (uint32_t)Floor(m_OutputResolution.y * contentScaleY);
+
+    const GLFWvidmode* vidmode = glfwGetVideoMode(monitor);
+    const uint32_t screenW = (uint32_t)vidmode->width;
+    const uint32_t screenH = (uint32_t)vidmode->height;
+
+    if (m_WindowResolution.x > screenW)
+        m_WindowResolution.x = screenW;
+    if (m_WindowResolution.y > screenH)
+        m_WindowResolution.y = screenH;
 
     // Window creation
-    printf("Creating %swindow (%u, %u)\n", decorated ? "" : "borderless ", m_WindowWidth, m_WindowHeight);
+    bool decorated = m_WindowResolution.x != screenW && m_WindowResolution.y != screenH;
+
+    printf("Creating %swindow (%u, %u)\n", decorated ? "" : "borderless ", m_WindowResolution.x, m_WindowResolution.y);
 
     glfwDefaultWindowHints();
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-    glfwWindowHint(GLFW_SCALE_TO_MONITOR, m_IgnoreDPI ? 1 : 0);
     glfwWindowHint(GLFW_VISIBLE, 0);
-    glfwWindowHint(GLFW_DECORATED, decorated);
+    glfwWindowHint(GLFW_DECORATED, decorated ? 1 : 0);
 
     char windowName[256];
-    snprintf(windowName, sizeof(windowName), "%s [%s]", windowTitle, g_GraphicsAPI[(size_t)m_GraphicsAPI]);
+    snprintf(windowName, sizeof(windowName), "%s [%s]", windowTitle, cmdLine.get<std::string>("api").c_str());
 
-    m_Window = glfwCreateWindow(m_WindowWidth, m_WindowHeight, windowName, NULL, NULL);
+    m_Window = glfwCreateWindow(m_WindowResolution.x, m_WindowResolution.y, windowName, NULL, NULL);
     if (!m_Window)
     {
         glfwTerminate();
         return false;
     }
 
-    int32_t x = (screenW - m_WindowWidth) >> 1;
-    int32_t y = (screenH - m_WindowHeight) >> 1;
+    int32_t x = (screenW - m_WindowResolution.x) >> 1;
+    int32_t y = (screenH - m_WindowResolution.y) >> 1;
     glfwSetWindowPos(m_Window, x, y);
 
-    // Sample loading
+    #if _WIN32
+        m_NRIWindow.windows.hwnd = glfwGetWin32Window(m_Window);
+    #elif __linux__
+        m_NRIWindow.x11.dpy = glfwGetX11Display();
+        m_NRIWindow.x11.window = glfwGetX11Window(m_Window);
+    #endif
+
+    // Main initialization
     printf("Loading...\n");
 
-#if _WIN32
-    m_NRIWindow.windows.hwnd = glfwGetWin32Window(m_Window);
-#elif __linux__
-    m_NRIWindow.x11.dpy = glfwGetX11Display();
-    m_NRIWindow.x11.window = glfwGetX11Window(m_Window);
-#endif
+    nri::GraphicsAPI graphicsAPI = nri::GraphicsAPI::VULKAN;
+    if (cmdLine.get<std::string>("api") == "D3D11")
+        graphicsAPI = nri::GraphicsAPI::D3D11;
+    else if (cmdLine.get<std::string>("api") == "D3D12")
+        graphicsAPI = nri::GraphicsAPI::D3D12;
 
-    bool result = Initialize(m_GraphicsAPI);
+    bool result = Initialize(graphicsAPI);
 
-    // Set callback and show window
+    // Set callbacks and show window
     glfwSetWindowUserPointer(m_Window, this);
     glfwSetKeyCallback(m_Window, GLFW_KeyCallback);
     glfwSetCharCallback(m_Window, GLFW_CharCallback);
@@ -793,70 +831,36 @@ void SampleBase::CursorMode(int32_t mode)
     }
 }
 
-void SampleBase::ParseCommandLine(int32_t argc, char** argv)
+void SampleBase::InitCmdLineDefault(cmdline::parser& cmdLine)
 {
-    CLARG_START(argv, argc, "--help", argc == 1)
-        printf
-        (
-            "Usage:\n"
-            "    --help - this message\n"
-            "    --api=<D3D11/D3D12/VULKAN>\n"
-            "    --width=<window width>\n"
-            "    --height=<window height>\n"
-            "    --frameNum=<num>\n"
-            "    --swapInterval=<0/1>\n"
-            "    --dlssQuality=<0/1/2>\n"
-            "    --scene=<scene path relative to '_Data/Scenes' folder>\n"
-            "    --debugAPI\n"
-            "    --debugNRI\n"
-            "    --ignoreDPI\n\n"
-         );
-    CLARG_END;
+    #if _WIN32
+        std::string graphicsAPI = "D3D12";
+    #else
+        std::string graphicsAPI = "VULKAN";
+    #endif
 
-    CLARG_START(argv, argc, "--api=", false)
-        if (CLARG_IF_VALUE(g_GraphicsAPI[0]))
-            m_GraphicsAPI = nri::GraphicsAPI::D3D11;
-        else if (CLARG_IF_VALUE(g_GraphicsAPI[1]))
-            m_GraphicsAPI = nri::GraphicsAPI::D3D12;
-        else if (CLARG_IF_VALUE(g_GraphicsAPI[2]))
-            m_GraphicsAPI = nri::GraphicsAPI::VULKAN;
-    CLARG_END;
+    cmdLine.add("help", '?', "print this message");
+    cmdLine.add<std::string>("api", 'a', "graphics API: D3D11, D3D12 or VULKAN", false, graphicsAPI, cmdline::oneof<std::string>("D3D11", "D3D12", "VULKAN"));
+    cmdLine.add<std::string>("scene", 's', "scene", false, m_SceneFile);
+    cmdLine.add<uint32_t>("width", 'w', "output resolution width", false, m_OutputResolution.x);
+    cmdLine.add<uint32_t>("height", 'h', "output resolution height", false, m_OutputResolution.y);
+    cmdLine.add<uint32_t>("frameNum", 'f', "max frames to render", false, m_FrameNum);
+    cmdLine.add<uint32_t>("vsyncInterval", 'v', "vsync interval", false, m_VsyncInterval);
+    cmdLine.add("debugAPI", 0, "enable graphics API validation layer");
+    cmdLine.add("debugNRI", 0, "enable NRI validation layer");
+    cmdLine.add("ignoreDPI", 0, "ignore DPI scaling");
+}
 
-    CLARG_START(argv, argc, "--width=", false)
-        m_WindowWidth = CLARG_TO_UINT;
-    CLARG_END;
-
-    CLARG_START(argv, argc, "--height=", false)
-        m_WindowHeight = CLARG_TO_UINT;
-    CLARG_END;
-
-    CLARG_START(argv, argc, "--frameNum=", false)
-        m_FrameNum = CLARG_TO_UINT;
-    CLARG_END;
-
-    CLARG_START(argv, argc, "--debugAPI", false)
-        m_DebugAPI = true;
-    CLARG_END;
-
-    CLARG_START(argv, argc, "--debugNRI", false)
-        m_DebugNRI = true;
-    CLARG_END;
-
-    CLARG_START(argv, argc, "--ignoreDPI", false)
-        m_IgnoreDPI = true;
-    CLARG_END;
-
-    CLARG_START(argv, argc, "--swapInterval=", false)
-        m_SwapInterval = CLARG_TO_UINT;
-    CLARG_END;
-
-    CLARG_START(argv, argc, "--dlssQuality=", false)
-        m_DlssQuality = CLARG_TO_UINT;
-    CLARG_END;
-
-    CLARG_START(argv, argc, "--scene=", false)
-        m_SceneFile = std::string(_pArg);
-    CLARG_END;
+void SampleBase::ReadCmdLineDefault(cmdline::parser& cmdLine)
+{
+    m_SceneFile = cmdLine.get<std::string>("scene");
+    m_OutputResolution.x = cmdLine.get<uint32_t>("width");
+    m_OutputResolution.y = cmdLine.get<uint32_t>("height");
+    m_FrameNum = cmdLine.get<uint32_t>("frameNum");
+    m_VsyncInterval = cmdLine.get<uint32_t>("vsyncInterval");
+    m_DebugAPI = cmdLine.exist("debugAPI");
+    m_DebugNRI = cmdLine.exist("debugNRI");
+    m_IgnoreDPI = cmdLine.exist("ignoreDPI");
 }
 
 void SampleBase::EnableMemoryLeakDetection(uint32_t breakOnAllocationIndex)

@@ -714,7 +714,7 @@ bool utils::LoadScene(const std::string& path, Scene& scene, bool simpleOIT, con
             {
                 const aiQuatKey& rotationKey = animChannel->mRotationKeys[j];
                 const float time = float( rotationKey.mTime / aiAnimation->mDuration );
-                const float4 value = float4(rotationKey.mValue.x, rotationKey.mValue.y, rotationKey.mValue.z, isCamera ? rotationKey.mValue.w : -rotationKey.mValue.w); // +/- is correct but WTF?
+                const float4 value = float4(rotationKey.mValue.x, rotationKey.mValue.y, rotationKey.mValue.z, rotationKey.mValue.w);
                 animationNode.rotationKeys.push_back(time);
                 animationNode.rotationValues.push_back(value);
             }

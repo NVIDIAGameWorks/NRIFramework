@@ -10,6 +10,11 @@ license agreement from NVIDIA CORPORATION is strictly prohibited.
 
 #pragma once
 
+#define NRI_FRAMEWORK 1
+#define NRI_FRAMEWORK_MAJOR 0
+#define NRI_FRAMEWORK_MINOR 1
+#define NRI_FRAMEWORK_DATE "28 October 2022"
+
 #define GLFW_INCLUDE_NONE 1
 #include "Glfw/include/GLFW/glfw3.h"
 #include "Glfw/include/GLFW/glfw3native.h"
@@ -19,6 +24,9 @@ license agreement from NVIDIA CORPORATION is strictly prohibited.
 #include "Extensions/NRIDeviceCreation.h"
 #include "Extensions/NRISwapChain.h"
 #include "Extensions/NRIHelper.h"
+
+// https://github.com/tanakh/cmdline
+#include "CmdLine.h"
 
 #include "Helper.h"
 #include "Utils.h"
@@ -195,24 +203,23 @@ public:
     inline float GetMouseWheel() const
     { return m_MouseWheel; }
 
-    inline uint16_t GetWindowWidth() const
-    { return (uint16_t)m_WindowWidth; }
+    inline uint2 GetWindowResolution() const
+    { return m_WindowResolution; }
 
-    inline uint16_t GetWindowHeight() const
-    { return (uint16_t)m_WindowHeight; }
-
-    inline uint32_t GetFrameNum() const
-    { return m_FrameNum; }
+    inline uint2 GetOutputResolution() const
+    { return m_OutputResolution; }
 
     const nri::Window& GetWindow() const;
     nri::WindowSystemType GetWindowSystemType() const;
 
     void GetCameraDescFromInputDevices(CameraDesc& cameraDesc);
-    bool CreateUserInterface(nri::Device& device, const nri::CoreInterface& coreInterface, const nri::HelperInterface& helperInterface, uint32_t windowWidth, uint32_t windowHeight, nri::Format renderTargetFormat);
+    bool CreateUserInterface(nri::Device& device, const nri::CoreInterface& coreInterface, const nri::HelperInterface& helperInterface, nri::Format renderTargetFormat);
     void DestroyUserInterface();
     void PrepareUserInterface();
     void RenderUserInterface(nri::CommandBuffer& commandBuffer);
 
+    virtual void InitCmdLine([[maybe_unused]] cmdline::parser& cmdLine) { }
+    virtual void ReadCmdLine([[maybe_unused]] cmdline::parser& cmdLine) { }
     virtual bool Initialize(nri::GraphicsAPI graphicsAPI) = 0;
     virtual void PrepareFrame(uint32_t frameIndex) = 0;
     virtual void RenderFrame(uint32_t frameIndex) = 0;
@@ -220,17 +227,16 @@ public:
     static void EnableMemoryLeakDetection(uint32_t breakOnAllocationIndex);
 
 protected:
-    Camera m_Camera;
+    nri::MemoryAllocatorInterface m_MemoryAllocatorInterface = {};
+    std::string m_SceneFile = "ShaderBalls/ShaderBalls.obj";
     sFastRand m_FastRandState = {};
-    uint32_t m_SwapInterval = 0;
+    Camera m_Camera;
+    uint32_t m_VsyncInterval = 0;
+    float m_MouseSensitivity = 1.0f;
     bool m_DebugAPI = false;
     bool m_DebugNRI = false;
     bool m_IgnoreDPI = false;
     bool m_IsActive = true;
-    std::string m_SceneFile = "ShaderBalls/ShaderBalls.obj";
-    uint32_t m_DlssQuality = uint32_t(-1);
-    nri::MemoryAllocatorInterface m_MemoryAllocatorInterface = {};
-    float m_MouseSensitivity = 1.0f;
 
     // Private
 private:
@@ -240,8 +246,9 @@ public:
     inline bool HasUserInterface() const
     { return m_timePrev != 0.0; }
 
-    void ParseCommandLine(int32_t argc, char** argv);
-    bool Create(const char* windowTitle);
+    void InitCmdLineDefault(cmdline::parser& cmdLine);
+    void ReadCmdLineDefault(cmdline::parser& cmdLine);
+    bool Create(int32_t argc, char** argv, const char* windowTitle);
     void RenderLoop();
 
     // Input (not public)
@@ -274,16 +281,11 @@ private:
     // Window
     GLFWwindow* m_Window = nullptr;
     nri::Window m_NRIWindow = {};
-    uint32_t m_WindowWidth = 1280;
-    uint32_t m_WindowHeight = 720;
+    uint2 m_WindowResolution = {1280, 720};
+    uint2 m_OutputResolution = {1280, 720};
 
     // Rendering
     uint32_t m_FrameNum = uint32_t(-1);
-#if _WIN32
-    nri::GraphicsAPI m_GraphicsAPI = nri::GraphicsAPI::D3D12;
-#else
-    nri::GraphicsAPI m_GraphicsAPI = nri::GraphicsAPI::VULKAN;
-#endif
 };
 
 #define _STRINGIFY(s) #s
@@ -294,8 +296,7 @@ private:
     { \
         SampleBase::EnableMemoryLeakDetection(memoryAllocationIndexForBreak); \
         SampleBase* sample = new className; \
-        sample->ParseCommandLine(argc, argv); \
-        bool result = sample->Create(STRINGIFY(PROJECT_NAME)); \
+        bool result = sample->Create(argc, argv, STRINGIFY(PROJECT_NAME)); \
         if (result) \
             sample->RenderLoop(); \
         delete sample; \
