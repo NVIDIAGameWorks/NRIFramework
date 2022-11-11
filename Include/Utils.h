@@ -10,24 +10,8 @@ license agreement from NVIDIA CORPORATION is strictly prohibited.
 
 #pragma once
 
-#include "Detex/detex.h"
-#include "MathLib/MathLib.h"
-
-#include "NRIDescs.h"
-#include "Extensions/NRIHelper.h"
-
-#include "Helper.h"
-
 #include <string>
 #include <vector>
-
-#define NRI_ABORT_ON_FAILURE(result) \
-    if ((result) != nri::Result::SUCCESS) \
-        exit(1);
-
-#define NRI_ABORT_ON_FALSE(result) \
-    if (!(result)) \
-        exit(1);
 
 #undef OPAQUE
 #undef TRANSPARENT
@@ -37,6 +21,7 @@ namespace utils
     struct Texture;
     struct Scene;
     typedef std::vector<std::vector<uint8_t>> ShaderCodeStorage;
+    typedef void* Mip;
 
     enum StaticTexture : uint32_t
     {
@@ -74,7 +59,7 @@ namespace utils
 
     struct Texture
     {
-        detexTexture **texture = nullptr;
+        Mip* mips = nullptr;
         std::string name;
         float4 avgColor = float4::Zero();
         uint64_t hash = 0;
@@ -86,17 +71,13 @@ namespace utils
         uint16_t mipNum = 0;
         uint16_t arraySize = 0;
 
-        inline ~Texture()
-        {
-            detexFreeTexture(texture, mipNum);
-            texture = nullptr;
-        }
+        ~Texture();
+
+        bool IsBlockCompressed() const;
+        void GetSubresource(nri::TextureSubresourceUploadDesc& subresource, uint32_t mipIndex, uint32_t arrayIndex = 0) const;
 
         inline void OverrideFormat(nri::Format fmt)
         { this->format = fmt; }
-
-        inline bool IsBlockCompressed() const
-        { return detexFormatIsCompressed(texture[0]->format); }
 
         inline uint16_t GetArraySize() const
         { return arraySize; }
@@ -115,21 +96,6 @@ namespace utils
 
         inline nri::Format GetFormat() const
         { return format; }
-
-        void GetSubresource(nri::TextureSubresourceUploadDesc& subresource, uint32_t mipIndex, uint32_t arrayIndex = 0) const
-        {
-            // TODO: 3D images are not supported, "subresource.slices" needs to be allocated to store pointers to all slices of the current mipmap
-            assert(GetDepth() == 1);
-            PLATFORM_UNUSED(arrayIndex);
-
-            int rowPitch, slicePitch;
-            detexComputePitch(texture[mipIndex]->format, texture[mipIndex]->width, texture[mipIndex]->height, &rowPitch, &slicePitch);
-
-            subresource.slices = texture[mipIndex]->data;
-            subresource.sliceNum = 1;
-            subresource.rowPitch = (uint32_t)rowPitch;
-            subresource.slicePitch = (uint32_t)slicePitch;
-        }
     };
 
     struct MaterialGroup
@@ -223,11 +189,14 @@ namespace utils
 
     struct NodeTree
     {
-        std::vector<NodeTree> mChildren;
-        std::vector<uint32_t> mInstances;
+        std::vector<NodeTree> children;
+        std::vector<uint32_t> instances;
         float4x4 mTransform = float4x4::Identity();
-        uint64_t mHash = 0;
-        int32_t animationNodeID = -1;
+        uint64_t hash = 0;
+        uint32_t animationNode = uint32_t(-1);
+
+        inline bool HasAnimation() const
+        { return animationNode != uint32_t(-1); }
 
         void Animate(utils::Scene& scene, std::vector<AnimationNode>& animationNodes, const float4x4& parentTransform, float4x4* outTransform = nullptr);
     };
@@ -251,48 +220,58 @@ namespace utils
     {
         ~Scene()
         {
-            for (size_t i = 0; i < textures.size(); i++)
-                delete textures[i];
+            UnloadTextureData();
         }
 
-        // 0 - opaque
-        // 1 - two-sided, alpha opaque
-        // 2 - transparent (back faces)
-        // 3 - transparent (front faces)
-        std::vector<MaterialGroup> materialsGroups;
+        // Transient resources - texture & geometry data (can be unloaded after uploading on GPU)
         std::vector<utils::Texture*> textures;
-        std::vector<Material> materials;
-        std::vector<Instance> instances;
-        std::vector<Mesh> meshes;
-        std::vector<Primitive> primitives;
         std::vector<Vertex> vertices;
         std::vector<UnpackedVertex> unpackedVertices;
         std::vector<Index> indices;
+        std::vector<Primitive> primitives;
+
+        // Other resources
+        std::vector<MaterialGroup> materialsGroups; // 0 - opaque, 1 - two-sided, alpha opaque, 2 - transparent (back faces), 3 - transparent (front faces)
+        std::vector<Material> materials;
+        std::vector<Instance> instances;
+        std::vector<Mesh> meshes;
         std::vector<Animation> animations;
         float4x4 mSceneToWorld = float4x4::Identity();
         cBoxf aabb;
 
         void Animate(float animationSpeed, float elapsedTime, float& animationProgress, uint32_t animationID, float4x4* outCameraTransform = nullptr);
 
-        inline void UnloadResources()
+        inline void UnloadTextureData()
         {
-            for (size_t i = 0; i < textures.size(); i++)
-                delete textures[i];
+            for (auto texture : textures)
+                delete texture;
 
-            textures.clear();
+            textures.resize(0);
             textures.shrink_to_fit();
+        }
 
-            vertices.clear();
+        inline void UnloadGeometryData()
+        {
+            vertices.resize(0);
             vertices.shrink_to_fit();
 
-            unpackedVertices.clear();
+            unpackedVertices.resize(0);
             unpackedVertices.shrink_to_fit();
 
-            indices.clear();
+            indices.resize(0);
             indices.shrink_to_fit();
 
-            primitives.clear();
+            primitives.resize(0);
             primitives.shrink_to_fit();
         }
     };
 }
+
+#define NRI_ABORT_ON_FAILURE(result) \
+    if ((result) != nri::Result::SUCCESS) \
+        exit(1);
+
+#define NRI_ABORT_ON_FALSE(result) \
+    if (!(result)) \
+        exit(1);
+

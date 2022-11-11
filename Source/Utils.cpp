@@ -14,15 +14,20 @@ license agreement from NVIDIA CORPORATION is strictly prohibited.
 
 #include <array>
 #include <map>
-#include <algorithm>
-#include <fstream>
 #include <functional>
 
 #include "assimp/scene.h"
 #include "assimp/cimport.h"
 #include "assimp/postprocess.h"
 
-#include "NRI.h"
+#include "Detex/detex.h"
+
+#include "MathLib/MathLib.h"
+
+#include "NRIDescs.hpp"
+#include "Extensions/NRIHelper.h"
+
+#include "Helper.h"
 #include "Utils.h"
 
 constexpr std::array<aiTextureType, 5> gSupportedTextureTypes =
@@ -50,6 +55,10 @@ constexpr std::array<const char*, 13> gShaderExts =
     ".rahit.",
     "<noimpl>"
 };
+
+//========================================================================================================================
+// MISC
+//========================================================================================================================
 
 inline bool IsExist(const std::string& path)
 {
@@ -200,16 +209,16 @@ static void ExtractNodeTree(const aiNode* node, std::map<const aiNode*, std::vec
         0.0f, 0.0f, 0.0f, 1.0f);
 
     utils::NodeTree parentInstance = {};
-    parentInstance.mHash = ComputeHash((uint8_t*)node->mName.C_Str(), node->mName.length);
+    parentInstance.hash = ComputeHash((uint8_t*)node->mName.C_Str(), node->mName.length);
     parentInstance.mTransform = transform;
 
     std::map<const aiNode*, std::vector<uint32_t>>::iterator it = nodeToInstanceMap.find((aiNode*)node);
     if (it != nodeToInstanceMap.end())
-        parentInstance.mInstances = it->second;
+        parentInstance.instances = it->second;
 
-    parentInstance.mChildren.resize(node->mNumChildren);
+    parentInstance.children.resize(node->mNumChildren);
     for (uint32_t i = 0; i < node->mNumChildren; i++)
-        ExtractNodeTree(node->mChildren[i], nodeToInstanceMap, parentInstance.mChildren[i]);
+        ExtractNodeTree(node->mChildren[i], nodeToInstanceMap, parentInstance.children[i]);
 
     animationIstance = parentInstance;
 }
@@ -229,90 +238,6 @@ inline uint32_t FindCurrentIndex(const std::vector<float>& keys, float time)
 
     return 0u;
 };
-
-const char* utils::GetFileName(const std::string& path)
-{
-    const size_t slashPos = path.find_last_of("\\/");
-    if (slashPos != std::string::npos)
-        return path.c_str() + slashPos + 1;
-
-    return "";
-}
-
-std::string utils::GetFullPath(const std::string& localPath, DataFolder dataFolder)
-{
-    std::string path = "_Data/"; // it's a symbolic link
-    if (dataFolder == DataFolder::SHADERS)
-        path = "_Shaders/"; // special folder with generated files
-    else if (dataFolder == DataFolder::TEXTURES)
-        path += "Textures/";
-    else if (dataFolder == DataFolder::SCENES)
-        path += "Scenes/";
-    else if (dataFolder == DataFolder::TESTS)
-        path = "Tests/"; // special folder stored in Git
-
-    return path + localPath;
-}
-
-bool utils::LoadFile(const std::string& path, std::vector<uint8_t>& data)
-{
-    FILE* file = fopen(path.c_str(), "rb");
-
-    if (file == nullptr)
-    {
-        printf("ERROR: File '%s' is not found!\n", path.c_str());
-        data.clear();
-        return false;
-    }
-
-    printf("Loading file '%s'...\n", GetFileName(path));
-
-    fseek(file, 0, SEEK_END);
-    const size_t size = ftell(file); // 32-bit size
-    fseek(file, 0, SEEK_SET);
-
-    data.resize(size);
-    const size_t readSize = fread(&data[0], size, 1, file);
-    fclose(file);
-
-    return !data.empty() && readSize == 1;
-}
-
-nri::ShaderDesc utils::LoadShader(nri::GraphicsAPI graphicsAPI, const std::string& shaderName, ShaderCodeStorage& storage, const char* entryPointName)
-{
-    const char* ext = GetShaderExt(graphicsAPI);
-    std::string path = GetFullPath(shaderName + ext, DataFolder::SHADERS);
-    nri::ShaderDesc shaderDesc = {};
-
-    uint32_t i = 1;
-    for (; i < (uint32_t)gShaderExts.size(); i++)
-    {
-        if (path.rfind(gShaderExts[i]) != std::string::npos)
-        {
-            storage.push_back( std::vector<uint8_t>() );
-            std::vector<uint8_t>& code = storage.back();
-
-            if (LoadFile(path, code))
-            {
-                shaderDesc.stage = (nri::ShaderStage)i;
-                shaderDesc.bytecode = code.data();
-                shaderDesc.size = code.size();
-                shaderDesc.entryPointName = entryPointName;
-            }
-
-            break;
-        }
-    }
-
-    if (i == (uint32_t)nri::ShaderStage::MAX_NUM)
-    {
-        printf("ERROR: Shader '%s' has invalid shader extension!\n", shaderName.c_str());
-
-        NRI_ABORT_ON_FALSE(false);
-    };
-
-    return shaderDesc;
-}
 
 static struct FormatMapping
 {
@@ -398,6 +323,135 @@ static nri::Format MakeSRGBFormat(nri::Format format)
     }
 }
 
+//========================================================================================================================
+// TEXTURE
+//========================================================================================================================
+
+inline detexTexture** ToTexture(utils::Mip* mips)
+{
+    return (detexTexture**)mips;
+}
+
+inline detexTexture* ToMip(utils::Mip mip)
+{
+    return (detexTexture*)mip;
+}
+
+utils::Texture::~Texture()
+{
+    detexFreeTexture(ToTexture(mips), mipNum);
+}
+
+void utils::Texture::GetSubresource(nri::TextureSubresourceUploadDesc& subresource, uint32_t mipIndex, uint32_t arrayIndex) const
+{
+    // TODO: 3D images are not supported, "subresource.slices" needs to be allocated to store pointers to all slices of the current mipmap
+    assert(GetDepth() == 1);
+    PLATFORM_UNUSED(arrayIndex);
+
+    detexTexture* mip = ToMip(mips[mipIndex]);
+
+    int rowPitch, slicePitch;
+    detexComputePitch(mip->format, mip->width, mip->height, &rowPitch, &slicePitch);
+
+    subresource.slices = mip->data;
+    subresource.sliceNum = 1;
+    subresource.rowPitch = (uint32_t)rowPitch;
+    subresource.slicePitch = (uint32_t)slicePitch;
+}
+
+bool utils::Texture::IsBlockCompressed() const
+{
+    return detexFormatIsCompressed( ToMip(mips[0])->format );
+}
+
+const char* utils::GetFileName(const std::string& path)
+{
+    const size_t slashPos = path.find_last_of("\\/");
+    if (slashPos != std::string::npos)
+        return path.c_str() + slashPos + 1;
+
+    return "";
+}
+
+//========================================================================================================================
+// UTILS
+//========================================================================================================================
+
+std::string utils::GetFullPath(const std::string& localPath, DataFolder dataFolder)
+{
+    std::string path = "_Data/"; // it's a symbolic link
+    if (dataFolder == DataFolder::SHADERS)
+        path = "_Shaders/"; // special folder with generated files
+    else if (dataFolder == DataFolder::TEXTURES)
+        path += "Textures/";
+    else if (dataFolder == DataFolder::SCENES)
+        path += "Scenes/";
+    else if (dataFolder == DataFolder::TESTS)
+        path = "Tests/"; // special folder stored in Git
+
+    return path + localPath;
+}
+
+bool utils::LoadFile(const std::string& path, std::vector<uint8_t>& data)
+{
+    FILE* file = fopen(path.c_str(), "rb");
+
+    if (file == nullptr)
+    {
+        printf("ERROR: File '%s' is not found!\n", path.c_str());
+        data.clear();
+        return false;
+    }
+
+    printf("Loading file '%s'...\n", GetFileName(path));
+
+    fseek(file, 0, SEEK_END);
+    const size_t size = ftell(file); // 32-bit size
+    fseek(file, 0, SEEK_SET);
+
+    data.resize(size);
+    const size_t readSize = fread(&data[0], size, 1, file);
+    fclose(file);
+
+    return !data.empty() && readSize == 1;
+}
+
+nri::ShaderDesc utils::LoadShader(nri::GraphicsAPI graphicsAPI, const std::string& shaderName, ShaderCodeStorage& storage, const char* entryPointName)
+{
+    const char* ext = GetShaderExt(graphicsAPI);
+    std::string path = GetFullPath(shaderName + ext, DataFolder::SHADERS);
+    nri::ShaderDesc shaderDesc = {};
+
+    uint32_t i = 1;
+    for (; i < (uint32_t)gShaderExts.size(); i++)
+    {
+        if (path.rfind(gShaderExts[i]) != std::string::npos)
+        {
+            storage.push_back( std::vector<uint8_t>() );
+            std::vector<uint8_t>& code = storage.back();
+
+            if (LoadFile(path, code))
+            {
+                shaderDesc.stage = (nri::ShaderStage)i;
+                shaderDesc.bytecode = code.data();
+                shaderDesc.size = code.size();
+                shaderDesc.entryPointName = entryPointName;
+            }
+
+            break;
+        }
+    }
+
+    if (i == (uint32_t)nri::ShaderStage::MAX_NUM)
+    {
+        printf("ERROR: Shader '%s' has invalid shader extension!\n", shaderName.c_str());
+
+        NRI_ABORT_ON_FALSE(false);
+    };
+
+    return shaderDesc;
+}
+
 bool utils::LoadTexture(const std::string& path, Texture& texture, bool computeAvgColorAndAlphaMode)
 {
     printf("Loading texture '%s'...\n", GetFileName(path));
@@ -412,7 +466,7 @@ bool utils::LoadTexture(const std::string& path, Texture& texture, bool computeA
         return false;
     }
 
-    texture.texture = dTexture;
+    texture.mips = (Mip*)dTexture;
     texture.name = path;
     texture.hash = ComputeHash(path.c_str(), (uint32_t)path.length());
     texture.format = GetFormatNRI(dTexture[0]->format);
@@ -497,7 +551,7 @@ void utils::LoadTextureFromMemory(nri::Format format, uint32_t width, uint32_t h
     texture.depth = 1;
     texture.format = format;
     texture.alphaMode = AlphaMode::OPAQUE;
-    texture.texture = dTexture;
+    texture.mips = (Mip*)dTexture;
 }
 
 bool utils::LoadScene(const std::string& path, Scene& scene, bool simpleOIT, const std::vector<float3>& instanceData)
@@ -537,7 +591,7 @@ bool utils::LoadScene(const std::string& path, Scene& scene, bool simpleOIT, con
     uint32_t instanceNum = aiScene.mNumMeshes;
     std::map<const aiNode*, std::vector<uint32_t>> nodeToInstanceMap;
     std::vector<std::vector<NodeData>> nodesByMeshID;
-    const bool loadFromNodes = EndsWithNoCase(path.c_str(), ".fbx") != 0;
+    const bool loadFromNodes = EndsWithNoCase(path.c_str(), ".fbx") != 0 || EndsWithNoCase(path.c_str(), ".gltf") != 0;
     if (loadFromNodes)
     {
         nodesByMeshID.resize(aiScene.mNumMeshes);
@@ -688,11 +742,11 @@ bool utils::LoadScene(const std::string& path, Scene& scene, bool simpleOIT, con
             if (aiScene.mNumCameras > 0 && strstr(animChannel->mNodeName.C_Str(), aiScene.mCameras[0]->mName.C_Str()))
             {
                 NodeTree* nextNode = &animation.cameraNode;
-                while (!nextNode->mChildren.empty())
-                    nextNode = &nextNode->mChildren[0];
+                while (!nextNode->children.empty())
+                    nextNode = &nextNode->children[0];
 
-                nextNode->animationNodeID = (int32_t)i;
-                nextNode->mChildren.push_back( NodeTree() );
+                nextNode->animationNode = i;
+                nextNode->children.push_back( NodeTree() );
 
                 isCamera = true;
             }
@@ -730,14 +784,13 @@ bool utils::LoadScene(const std::string& path, Scene& scene, bool simpleOIT, con
 
             std::function<void(const uint64_t&, NodeTree&)> findNode = [&](const uint64_t& hash, NodeTree& sceneNode)
             {
-                if (hash == sceneNode.mHash)
+                if (hash == sceneNode.hash)
                 {
-                    //sceneNode.pAnimationNode = &animationNode;
-                    sceneNode.animationNodeID = (int32_t)i;
+                    sceneNode.animationNode = i;
                     return;
                 }
 
-                for (NodeTree& child : sceneNode.mChildren)
+                for (NodeTree& child : sceneNode.children)
                     findNode(hash, child);
             };
 
@@ -1128,21 +1181,21 @@ void utils::AnimationNode::Animate(float time)
 
 void utils::NodeTree::Animate(Scene& scene, std::vector<AnimationNode>& animationNodes, const float4x4& parentTransform, float4x4* outTransform)
 {
-    const float4x4& transform = animationNodeID != -1 ? animationNodes[animationNodeID].mTransform : mTransform;
+    const float4x4& transform = HasAnimation() ? animationNodes[animationNode].mTransform : mTransform;
     float4x4 combinedTransform = parentTransform * transform;
 
-    for (NodeTree& child : mChildren)
+    for (NodeTree& child : children)
         child.Animate(scene, animationNodes, combinedTransform, outTransform);
 
-    if (outTransform && mChildren.empty())
+    if (outTransform && children.empty())
         *outTransform = combinedTransform;
 
-    if (!mInstances.empty())
+    if (!instances.empty())
     {
         double3 position = ToDouble( combinedTransform.GetCol3().To3d() );
         combinedTransform.SetTranslation( float3::Zero() );
 
-        for (const uint32_t& instanceId : mInstances)
+        for (const uint32_t& instanceId : instances)
         {
             Instance& sceneInstance = scene.instances[instanceId];
             sceneInstance.rotation = combinedTransform;

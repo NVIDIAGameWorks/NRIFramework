@@ -8,6 +8,9 @@ distribution of this software and related documentation without an express
 license agreement from NVIDIA CORPORATION is strictly prohibited.
 */
 
+#include "MathLib/MathLib.h"
+#include "Timer.h"
+
 #include "Camera.h"
 
 void Camera::Initialize(const float3& position, const float3& lookAt, bool isRelative)
@@ -75,7 +78,7 @@ void Camera::Update(const CameraDesc& desc, uint32_t frameIndex)
     state.rotation.x = Mod(state.rotation.x, 360.0f);
     state.rotation.y = Clamp(state.rotation.y, -90.0f, 90.0f);
 
-    if( desc.isCustomMatrixSet )
+    if (desc.isCustomMatrixSet)
     {
         state.mViewToWorld = desc.customMatrix;
 

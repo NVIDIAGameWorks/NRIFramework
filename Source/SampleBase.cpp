@@ -8,7 +8,9 @@ distribution of this software and related documentation without an express
 license agreement from NVIDIA CORPORATION is strictly prohibited.
 */
 
-#include "SampleBase.h"
+#include "NRIFramework.h"
+
+#include "Glfw/include/GLFW/glfw3native.h"
 
 #if __linux__
     #include <csignal>

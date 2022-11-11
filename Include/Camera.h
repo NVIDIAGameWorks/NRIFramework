@@ -10,9 +10,6 @@ license agreement from NVIDIA CORPORATION is strictly prohibited.
 
 #pragma once
 
-#include "Timer.h"
-#include "MathLib/MathLib.h"
-
 struct CameraDesc
 {
     cBoxf limits = {};
