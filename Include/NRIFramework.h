@@ -10,10 +10,10 @@ license agreement from NVIDIA CORPORATION is strictly prohibited.
 
 #pragma once
 
+#define NRI_FRAMEWORK_VERSION_MAJOR 0
+#define NRI_FRAMEWORK_VERSION_MINOR 2
+#define NRI_FRAMEWORK_VERSION_DATE "17 November 2022"
 #define NRI_FRAMEWORK 1
-#define NRI_FRAMEWORK_MAJOR 0
-#define NRI_FRAMEWORK_MINOR 1
-#define NRI_FRAMEWORK_DATE "28 October 2022"
 
 // 3rd party
 #include "Glfw/include/GLFW/glfw3.h"
