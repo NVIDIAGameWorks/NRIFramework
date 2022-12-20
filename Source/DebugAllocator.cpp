@@ -57,7 +57,7 @@ static void* DebugAlignedMalloc(void* userArg, size_t size, size_t alignment)
     DebugAllocatorHeader* header = GetAllocationHeader(alignedMemory);
     *header = {};
     header->size = allocationSize;
-    header->alignment = alignment;
+    header->alignment = (uint32_t)alignment;
     header->offset = (uint32_t)(alignedMemory - memory);
 
     allocator->allocatedSize.fetch_add(allocationSize, std::memory_order_relaxed);
@@ -98,7 +98,7 @@ static void* DebugAlignedRealloc(void* userArg, void* memory, size_t size, size_
     DebugAllocatorHeader* newHeader = GetAllocationHeader(alignedMemory);
     *newHeader = {};
     newHeader->size = allocationSize;
-    newHeader->alignment = alignment;
+    newHeader->alignment = (uint32_t)alignment;
     newHeader->offset = (uint32_t)(alignedMemory - newMemory);
 
     return alignedMemory;

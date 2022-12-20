@@ -542,7 +542,7 @@ public:
   void parse_check(const std::vector<std::string> &args){
     if (!options.count("help"))
       add("help", '?', "print this message");
-    check(args.size(), parse(args));
+    check((int)args.size(), parse(args));
   }
 
   void parse_check(int argc, char *argv[]){
@@ -766,9 +766,9 @@ private:
     }
 
   protected:
-    std::string full_description(const std::string &desc){
+    std::string full_description(const std::string &s){
       return
-        desc+" ("+detail::readable_typename<T>()+
+        s+" ("+detail::readable_typename<T>()+
         (need?"":" [="+detail::default_value<T>(def)+"]")
         +")";
     }

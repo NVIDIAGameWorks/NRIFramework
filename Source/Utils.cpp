@@ -24,7 +24,7 @@ license agreement from NVIDIA CORPORATION is strictly prohibited.
 
 #include "MathLib/MathLib.h"
 
-#include "NRIDescs.hpp"
+#include "NRI.h"
 #include "Extensions/NRIHelper.h"
 
 #include "Helper.h"
@@ -898,14 +898,14 @@ bool utils::LoadScene(const std::string& path, Scene& scene, bool simpleOIT, con
 
             float3 edge20 = p2 - p0;
             float3 edge10 = p1 - p0;
-            float worldArea = Length( Cross(edge20, edge10) );
+            float worldArea = Max( Length( Cross(edge20, edge10) ), 1e-9f );
 
             float3 uvEdge20 = float3(v2.uv[0], v2.uv[1], 0.0f) - float3(v0.uv[0], v0.uv[1], 0.0f);
             float3 uvEdge10 = float3(v1.uv[0], v1.uv[1], 0.0f) - float3(v0.uv[0], v0.uv[1], 0.0f);
             float uvArea = Length( Cross(uvEdge20, uvEdge10) );
 
             Primitive& primitive = scene.primitives[primitiveIndex];
-            primitive.worldToUvUnits = uvArea == 0 ? 1.0f : Sqrt( uvArea / ( worldArea + 1e-9f ) );
+            primitive.worldToUvUnits = uvArea == 0 ? 1.0f : Sqrt( uvArea / worldArea );
 
             // Unsigned curvature
             // https://computergraphics.stackexchange.com/questions/1718/what-is-the-simplest-way-to-compute-principal-curvature-for-a-mesh-triangle
@@ -913,27 +913,22 @@ bool utils::LoadScene(const std::string& path, Scene& scene, bool simpleOIT, con
             float3 n1 = float3(v1.normal);
             float3 n2 = float3(v2.normal);
 
-            float triArea = Length( Cross(p1 - p0, p2 - p0) ) * 0.5f;
-            float invTriArea = 1.0f / Max(triArea, 1e-9f);
-
-            #if 1
-                float curvature10 = Abs( Dot33(n1 - n0, p1 - p0) ) / LengthSquared(p1 - p0);
-                float curvature21 = Abs( Dot33(n2 - n1, p2 - p1) ) / LengthSquared(p2 - p1);
-                float curvature02 = Abs( Dot33(n0 - n2, p0 - p2) ) / LengthSquared(p0 - p2);
-            #else
-                float curvature10 = Sqrt( LengthSquared(n1 - n0) * invTriArea );
-                float curvature21 = Sqrt( LengthSquared(n2 - n1) * invTriArea );
-                float curvature02 = Sqrt( LengthSquared(n0 - n2) * invTriArea );
-            #endif
-
-            // Without sophisticated corrections "signed" curvature can be dangerous
-            #if 0
-                curvature10 *= Sign( Dot33(n1 - n0, p1 - p0) );
-                curvature21 *= Sign( Dot33(n2 - n1, p2 - p1) );
-                curvature02 *= Sign( Dot33(n0 - n2, p0 - p2) );
-            #endif
+            // Stage 1
+            float curvature10 = Abs( Dot33(n1 - n0, p1 - p0) ) / LengthSquared(p1 - p0);
+            float curvature21 = Abs( Dot33(n2 - n1, p2 - p1) ) / LengthSquared(p2 - p1);
+            float curvature02 = Abs( Dot33(n0 - n2, p0 - p2) ) / LengthSquared(p0 - p2);
 
             primitive.curvature = Max(curvature10, curvature21);
+            primitive.curvature = Max(primitive.curvature, curvature02);
+
+            // Stage 2
+            float invTriArea = 1.0f / (worldArea * 0.5f);
+            curvature10 = Sqrt( LengthSquared(n1 - n0) * invTriArea );
+            curvature21 = Sqrt( LengthSquared(n2 - n1) * invTriArea );
+            curvature02 = Sqrt( LengthSquared(n0 - n2) * invTriArea );
+
+            primitive.curvature = Max(primitive.curvature, curvature10);
+            primitive.curvature = Max(primitive.curvature, curvature21);
             primitive.curvature = Max(primitive.curvature, curvature02);
         }
 

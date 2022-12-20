@@ -1,138 +1,161 @@
 cmake_minimum_required(VERSION 3.15)
 
-message("Processing 'NRI Framework'...")
+# Cached
+set(GLOBAL_BIN_OUTPUT_PATH "${CMAKE_SOURCE_DIR}/_Build" CACHE STRING "")
+set(CMAKE_CONFIGURATION_TYPES "Debug;Release" CACHE STRING "")
 
-# Options:
-#set(NRIF_OUTPUT_PATH "my/output/")
+# Create project
+file(READ "${CMAKE_CURRENT_SOURCE_DIR}/Include/NRIFramework.h" ver_h)
+string(REGEX MATCH "NRI_FRAMEWORK_VERSION_MAJOR ([0-9]*)" _ ${ver_h})
+set(VERSION_MAJOR ${CMAKE_MATCH_1})
+string(REGEX MATCH "NRI_FRAMEWORK_VERSION_MINOR ([0-9]*)" _ ${ver_h})
+set(VERSION_MINOR ${CMAKE_MATCH_1})
 
+message("NRIFramework v${VERSION_MAJOR}.${VERSION_MINOR}")
 project(NRIFramework LANGUAGES C CXX)
+
+# Download dependencies using Packman
+if(WIN32)
+    set(PACKMAN_EXT ".cmd")
+endif()
+
+if((CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64") OR (CMAKE_SYSTEM_PROCESSOR MATCHES "AMD64"))
+    if(WIN32)
+        set(PACKMAN_PLATFORM "windows-x86_64")
+    else()
+        set(PACKMAN_PLATFORM "linux-x86_64")
+    endif()
+elseif((CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64") OR (CMAKE_SYSTEM_PROCESSOR MATCHES "arm64"))
+    set(PACKMAN_PLATFORM "linux-aarch64")
+else()
+    message(FATAL_ERROR "Unsupported architecture: '${CMAKE_SYSTEM_PROCESSOR}'")
+endif()
+message("Packman platform: ${PACKMAN_PLATFORM}")
+
+execute_process(COMMAND "${CMAKE_CURRENT_SOURCE_DIR}/External/Packman/Packman${PACKMAN_EXT}" pull "${CMAKE_CURRENT_SOURCE_DIR}/Dependencies.xml" -p ${PACKMAN_PLATFORM} -t nri_data_version=${NRI_DATA_VERSION}
+    WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+    RESULT_VARIABLE PACKMAN_RESULT)
+
+if(NOT "${PACKMAN_RESULT}" STREQUAL "0")
+    message(FATAL_ERROR "Packman failed(code = ${PACKMAN_RESULT})")
+endif()
+
+# Setup dependencies
+if(CMAKE_SIZEOF_VOID_P EQUAL 8)
+    set(BIN_ARCHITECTURE "x86_64")
+else()
+    set(BIN_ARCHITECTURE "x86")
+endif()
+
+if(WIN32)
+    find_library(GLFW_RELEASE_LIB NAMES glfw3 PATHS "External/Glfw/build-${BIN_ARCHITECTURE}/Release/src" REQUIRED)
+    find_library(GLFW_DEBUG_LIB NAMES glfw3 PATHS "External/Glfw/build-${BIN_ARCHITECTURE}/Debug/src" REQUIRED)
+    find_library(ASSIMP_LIB NAMES assimp-vc142-mt PATHS "External/Assimp/lib/${BIN_ARCHITECTURE}" REQUIRED)
+    find_file(INPUT_ASSIMP_SHARED_LIB NAMES assimp-vc142-mt.dll PATHS "External/Assimp/bin/${BIN_ARCHITECTURE}" REQUIRED)
+else()
+    find_library(GLFW_RELEASE_LIB NAMES glfw3 PATHS "External/Glfw/build/Release/src" REQUIRED)
+    find_library(GLFW_DEBUG_LIB NAMES glfw3 PATHS "External/Glfw/build/Debug/src" REQUIRED)
+    find_library(INPUT_ASSIMP_SHARED_LIB NAMES assimp PATHS "External/Assimp/bin" REQUIRED)
+    set(ASSIMP_LIB ${INPUT_ASSIMP_SHARED_LIB})
+
+    if(UNIX)
+        find_path(XLIB_HEADERS NAMES "X11/Xlib.h")
+        if(NOT XLIB_HEADERS)
+            message(FATAL_ERROR "Can't find 'X11/xlib.h'.(libx11-dev is not installed?)")
+        endif()
+
+        find_path(XRANDR_HEADERS NAMES "X11/extensions/Xrandr.h")
+        if(NOT XRANDR_HEADERS)
+            message(FATAL_ERROR "Can't find 'X11/extensions/Xrandr.h'.(libxrandr-dev is not installed?)")
+        endif()
+    endif()
+endif()
+set(GLFW_LIB optimized ${GLFW_RELEASE_LIB} debug ${GLFW_DEBUG_LIB})
+
+# Globals?
+set_property(GLOBAL PROPERTY USE_FOLDERS ON)
+
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_VISIBILITY_PRESET hidden)
+set(CMAKE_CXX_EXTENSIONS OFF)
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+set(CMAKE_POSITION_INDEPENDENT_BINARIES ON)
+set(CMAKE_VISIBILITY_INLINES_HIDDEN ON)
 
-if(CMAKE_SIZEOF_VOID_P EQUAL 8)
-    set(NRIF_BUILD_ARCHITECTURE_SUFFIX "x86_64")
-elseif(CMAKE_SIZEOF_VOID_P EQUAL 4)
-    set(NRIF_BUILD_ARCHITECTURE_SUFFIX "x86")
-endif()
-
-# Detecting target architecture
-if ((CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64") OR (CMAKE_SYSTEM_PROCESSOR MATCHES "AMD64"))
-    set(NRIF_PACKMAN_PLATFORM_SUFFIX "x86_64")
-elseif ((CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64") OR (CMAKE_SYSTEM_PROCESSOR MATCHES "arm64"))
-    set(NRIF_PACKMAN_PLATFORM_SUFFIX "aarch64")
+if(MSVC)
+    set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 else()
-    message(FATAL_ERROR "Unknown architecture: '${CMAKE_SYSTEM_PROCESSOR}'")
+    set(CMAKE_STATIC_LINKER_FLAGS "${CMAKE_STATIC_LINKER_FLAGS} -static-libstdc++ -static-libgcc")
+    set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -static-libstdc++ -static-libgcc")
+    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static-libstdc++ -static-libgcc")
 endif()
 
-# Use different scripts on different platforms
-if (WIN32)
-    set(NRIF_PACKMAN_SCRIPT "packman.cmd")
-    set(NRIF_PACKMAN_PLATFORM "windows-${NRIF_PACKMAN_PLATFORM_SUFFIX}")
+# Compile options
+if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+    set(COMPILE_OPTIONS -Wextra)
+elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU")
+    set(COMPILE_OPTIONS -Wextra)
+elseif(MSVC)
+    set(COMPILE_OPTIONS /W4 /WX /wd4324)
 else()
-    set(NRIF_PACKMAN_SCRIPT "packman")
-    set(NRIF_PACKMAN_PLATFORM "linux-${NRIF_PACKMAN_PLATFORM_SUFFIX}")
+    message(WARNING "Unknown compiler!")
 endif()
 
-# Verify that packman is available
-find_file(NRIF_PACKMAN NAMES ${NRIF_PACKMAN_SCRIPT} PATHS "${CMAKE_CURRENT_SOURCE_DIR}/External/Packman")
-if (NOT NRIF_PACKMAN)
-    message(FATAL_ERROR "Can't find packman: '${CMAKE_CURRENT_SOURCE_DIR}/External/Packman/${NRIF_PACKMAN_SCRIPT}' (did you init submodules?)")
-endif()
-
-# Loading dependcies using packman
-execute_process(COMMAND "${NRIF_PACKMAN}" pull "${CMAKE_CURRENT_SOURCE_DIR}/Dependencies.xml" -t nri_data_version=${NRI_DATA_VERSION}
-    -p ${NRIF_PACKMAN_PLATFORM} RESULT_VARIABLE NRIF_PACKMAN_RESULT)
-if ("${NRIF_PACKMAN_RESULT}" STREQUAL "0")
-    message(STATUS "Packman result: success (platform: '${NRIF_PACKMAN_PLATFORM}')")
+# Compile definitions
+if(WIN32)
+    set(COMPILE_DEFINITIONS WIN32_LEAN_AND_MEAN NOMINMAX _CRT_SECURE_NO_WARNINGS _UNICODE UNICODE GLFW_EXPOSE_NATIVE_WIN32 GLFW_INCLUDE_NONE)
 else()
-    message(FATAL_ERROR "Packman result: ${NRIF_PACKMAN_RESULT} (platform: '${NRIF_PACKMAN_PLATFORM}')")
+    set(COMPILE_DEFINITIONS GLFW_EXPOSE_NATIVE_X11 GLFW_INCLUDE_NONE)
 endif()
 
-# Defines for all projects
-if (WIN32)
-    set(NRIF_PLATFORM_DEFINITIONS WIN32_LEAN_AND_MEAN NOMINMAX _CRT_SECURE_NO_WARNINGS _UNICODE UNICODE GLFW_EXPOSE_NATIVE_WIN32 GLFW_INCLUDE_NONE)
-else()
-    set(NRIF_PLATFORM_DEFINITIONS GLFW_EXPOSE_NATIVE_X11 GLFW_INCLUDE_NONE)
+# External/ImGui
+file(GLOB IMGUI_SOURCE "External/ImGui/*.cpp" "External/ImGui/*.h")
+source_group("" FILES ${IMGUI_SOURCE})
+add_library(ImGui STATIC ${IMGUI_SOURCE})
+target_compile_definitions(ImGui PRIVATE ${COMPILE_DEFINITIONS})
+set_property(TARGET ImGui PROPERTY FOLDER "${PROJECT_NAME}/External")
+
+# External/Detex
+file(GLOB DETEX_SOURCE "External/Detex/*.c" "External/Detex/*.h")
+source_group("" FILES ${DETEX_SOURCE})
+add_library(Detex STATIC ${DETEX_SOURCE})
+target_compile_definitions(Detex PRIVATE ${COMPILE_DEFINITIONS})
+set_property(TARGET Detex PROPERTY FOLDER "${PROJECT_NAME}/External")
+
+# External/MathLib
+file(READ "${CMAKE_CURRENT_SOURCE_DIR}/External/MathLib/MathLib.h" ver_h)
+string(REGEX MATCH "MATHLIB_VERSION_MAJOR ([0-9]*)" _ ${ver_h})
+set(MATHLIB_VERSION_MAJOR ${CMAKE_MATCH_1})
+string(REGEX MATCH "MATHLIB_VERSION_MINOR ([0-9]*)" _ ${ver_h})
+set(MATHLIB_VERSION_MINOR ${CMAKE_MATCH_1})
+message("MathLib v${MATHLIB_VERSION_MAJOR}.${MATHLIB_VERSION_MINOR}")
+
+file(GLOB MATHLIB_HEADERS "External/MathLib/*.h" "External/MathLib/*.hpp")
+source_group("MathLib" FILES ${MATHLIB_HEADERS})
+
+# External/NRI
+add_subdirectory("External/NRI")
+
+# NRIFramework
+file(GLOB FRAMEWORK_SOURCE "Source/*.cpp" "Source/*.h")
+source_group("Source" FILES ${FRAMEWORK_SOURCE})
+file(GLOB FRAMEWORK_HEADERS "Include/*.hpp" "Include/*.h")
+source_group("Include" FILES ${FRAMEWORK_HEADERS})
+add_library(${PROJECT_NAME} STATIC ${FRAMEWORK_SOURCE} ${FRAMEWORK_HEADERS} ${MATHLIB_HEADERS})
+target_link_libraries(${PROJECT_NAME} PRIVATE ImGui Detex ${ASSIMP_LIB} ${GLFW_LIB})
+
+if(UNIX)
+    target_link_libraries(${PROJECT_NAME} PRIVATE ${CMAKE_DL_LIBS} pthread X11)
 endif()
 
-# Verify that required static and shared libraries are available
-if (WIN32)
-    find_library(NRIF_INPUT_GLFW_LIB NAMES glfw3 PATHS "External/Glfw/build-${NRIF_BUILD_ARCHITECTURE_SUFFIX}/Release/src" REQUIRED)
-    find_library(NRIF_INPUT_ASSIMP_LIB NAMES assimp-vc142-mt PATHS "External/Assimp/lib/${NRIF_BUILD_ARCHITECTURE_SUFFIX}" REQUIRED)
-    find_file(NRIF_INPUT_ASSIMP_SHARED_LIB NAMES assimp-vc142-mt.dll PATHS "External/Assimp/bin/${NRIF_BUILD_ARCHITECTURE_SUFFIX}" REQUIRED)
-else()
-    find_library(NRIF_INPUT_GLFW_LIB NAMES glfw3 PATHS "External/Glfw/build/Release/src" REQUIRED)
-    find_library(NRIF_INPUT_ASSIMP_SHARED_LIB NAMES assimp PATHS "External/Assimp/bin" REQUIRED)
-    set(NRIF_INPUT_ASSIMP_LIB ${NRIF_INPUT_ASSIMP_SHARED_LIB})
-endif()
+target_include_directories(${PROJECT_NAME} PRIVATE "Source" "Include" "External" "External/NRI/Include" "External/Assimp/include")
+target_compile_definitions(${PROJECT_NAME} PRIVATE ${COMPILE_DEFINITIONS})
+target_compile_options(${PROJECT_NAME} PRIVATE ${COMPILE_OPTIONS})
+set_property(TARGET ${PROJECT_NAME} PROPERTY FOLDER ${PROJECT_NAME})
 
-# Verify that required Linux packages are installed
-if (UNIX)
-    find_path(NRIF_XLIB_HEADERS NAMES "X11/Xlib.h")
-    if (NOT NRIF_XLIB_HEADERS)
-        message(FATAL_ERROR "Can't find 'X11/xlib.h'. (libx11-dev is not installed?)")
-    endif()
-    find_path(NRIF_XRANDR_HEADERS NAMES "X11/extensions/Xrandr.h")
-    if (NOT NRIF_XRANDR_HEADERS)
-        message(FATAL_ERROR "Can't find 'X11/extensions/Xrandr.h'. (libxrandr-dev is not installed?)")
-    endif()
-endif()
-
-# MathLib requires SSE4.1
-if ((CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64") OR (CMAKE_SYSTEM_PROCESSOR MATCHES "AMD64"))
-    set(NRIF_ARCHITECTURE_COMPILE_OPTIONS -msse4.1)
-endif()
-
-# Compiler-specific options
-if (CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-    # -Wno-pragma-pack: assimp causes a number of these warnings
-    # warning: the current #pragma pack alignment value is modified in the included file [-Wpragma-pack]
-    add_compile_options(${NRIF_ARCHITECTURE_COMPILE_OPTIONS} -Wno-missing-braces -Wno-return-type-c-linkage -Wno-pragma-pack)
-    set(DETEX_COMPILE_OPTIONS -Wno-unused-function)
-elseif (CMAKE_CXX_COMPILER_ID MATCHES "GNU")
-    add_compile_options(${NRIF_ARCHITECTURE_COMPILE_OPTIONS})
-endif()
-
-if (WIN32)
-    # On Windows, GLFW requires /MT
-    add_compile_options($<$<CONFIG:Debug>:/MTd> $<$<CONFIG:Release>:/MT> $<$<CONFIG:RelWithDebInfo>:/MT> $<$<CONFIG:MinSizeRel>:/MT>)
-endif()
-
-# External static library: ImGui
-file(GLOB NRIF_IMGUI_SOURCE "External/ImGui/*.cpp" "External/ImGui/*.h")
-source_group("" FILES ${NRIF_IMGUI_SOURCE})
-add_library(ImGui STATIC ${NRIF_IMGUI_SOURCE})
-target_compile_definitions(ImGui PRIVATE ${NRIF_PLATFORM_DEFINITIONS})
-set_property(TARGET ImGui PROPERTY FOLDER "External")
-
-# External static library: Detex
-file(GLOB NRIF_DETEX_SOURCE "External/Detex/*.c" "External/Detex/*.h")
-source_group("" FILES ${NRIF_DETEX_SOURCE})
-add_library(Detex STATIC ${NRIF_DETEX_SOURCE})
-target_compile_definitions(Detex PRIVATE ${NRIF_PLATFORM_DEFINITIONS})
-target_compile_options(Detex PRIVATE ${DETEX_COMPILE_OPTIONS})
-set_property(TARGET Detex PROPERTY FOLDER "External")
-
-# Static library: NRIFramework
-file(GLOB NRIF_FRAMEWORK_SOURCE "Source/*.cpp" "Source/*.h")
-source_group("" FILES ${NRIF_FRAMEWORK_SOURCE})
-file(GLOB NRIF_FRAMEWORK_HEADERS "Include/*.hpp" "Include/*.h")
-source_group("Include" FILES ${NRIF_FRAMEWORK_HEADERS})
-add_library(NRIFramework STATIC ${NRIF_FRAMEWORK_SOURCE} ${NRIF_FRAMEWORK_HEADERS})
-target_link_libraries(NRIFramework PRIVATE ImGui Detex ${NRIF_INPUT_GLFW_LIB} ${NRIF_INPUT_ASSIMP_LIB})
-
-if (UNIX)
-    target_link_libraries(NRIFramework PRIVATE ${CMAKE_DL_LIBS} pthread X11)
-endif()
-
-target_include_directories(NRIFramework PRIVATE "Source" "Include" "External" "External/NRI/Include" "External/Assimp/include")
-target_compile_definitions(NRIFramework PRIVATE ${NRIF_PLATFORM_DEFINITIONS})
-set_property(TARGET NRIFramework PROPERTY FOLDER "Samples")
-
-if (NRIF_OUTPUT_PATH)
-    get_filename_component(NRIF_INPUT_ASSIMP_SHARED_LIB_NAME ${NRIF_INPUT_ASSIMP_SHARED_LIB} NAME)
-    set(NRIF_OUTPUT_ASSIMP_SHARED_LIB ${NRIF_OUTPUT_PATH}/$<CONFIG>/${NRIF_INPUT_ASSIMP_SHARED_LIB_NAME})
-    add_custom_command(TARGET NRIFramework POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different ${NRIF_INPUT_ASSIMP_SHARED_LIB} ${NRIF_OUTPUT_ASSIMP_SHARED_LIB}
-        COMMAND_EXPAND_LISTS)
-endif()
+get_filename_component(INPUT_ASSIMP_SHARED_LIB_NAME ${INPUT_ASSIMP_SHARED_LIB} NAME)
+set(OUTPUT_ASSIMP_SHARED_LIB ${GLOBAL_BIN_OUTPUT_PATH}/$<CONFIG>/${INPUT_ASSIMP_SHARED_LIB_NAME})
+add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different ${INPUT_ASSIMP_SHARED_LIB} ${OUTPUT_ASSIMP_SHARED_LIB}
+    COMMAND_EXPAND_LISTS)

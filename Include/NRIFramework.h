@@ -11,8 +11,8 @@ license agreement from NVIDIA CORPORATION is strictly prohibited.
 #pragma once
 
 #define NRI_FRAMEWORK_VERSION_MAJOR 0
-#define NRI_FRAMEWORK_VERSION_MINOR 2
-#define NRI_FRAMEWORK_VERSION_DATE "17 November 2022"
+#define NRI_FRAMEWORK_VERSION_MINOR 3
+#define NRI_FRAMEWORK_VERSION_DATE "20 December 2022"
 #define NRI_FRAMEWORK 1
 
 // 3rd party
@@ -24,7 +24,7 @@ license agreement from NVIDIA CORPORATION is strictly prohibited.
 #include "Timer.h"
 
 // NRI: core & common extensions
-#include "NRIDescs.hpp"
+#include "NRI.h"
 #include "Extensions/NRIDeviceCreation.h"
 #include "Extensions/NRISwapChain.h"
 #include "Extensions/NRIHelper.h"
@@ -106,6 +106,7 @@ protected:
     std::string m_SceneFile = "ShaderBalls/ShaderBalls.obj";
     sFastRand m_FastRandState = {};
     Camera m_Camera;
+    uint2 m_OutputResolution = {1280, 720};
     uint32_t m_VsyncInterval = 0;
     float m_MouseSensitivity = 1.0f;
     bool m_DebugAPI = false;
@@ -145,6 +146,7 @@ private:
     nri::DescriptorPool* m_DescriptorPool = nullptr;
     nri::DescriptorSet* m_DescriptorSet = nullptr;
     nri::Descriptor* m_FontShaderResource = nullptr;
+    nri::Descriptor* m_Sampler = nullptr;
     nri::Pipeline* m_Pipeline = nullptr;
     nri::PipelineLayout* m_PipelineLayout = nullptr;
     nri::Texture* m_FontTexture = nullptr;
@@ -156,8 +158,7 @@ private:
     // Window
     GLFWwindow* m_Window = nullptr;
     nri::Window m_NRIWindow = {};
-    uint2 m_WindowResolution = {1280, 720};
-    uint2 m_OutputResolution = {1280, 720};
+    uint2 m_WindowResolution = {};
 
     // Rendering
     uint32_t m_FrameNum = uint32_t(-1);

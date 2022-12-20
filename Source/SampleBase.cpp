@@ -32,6 +32,7 @@ constexpr uint64_t STREAM_BUFFER_SIZE = 8 * 1024 * 1024;
 //==================================================================================================================================================
 
 #if _WIN32
+
 void* __CRTDECL operator new(size_t size)
 {
     return _aligned_malloc(size, DEFAULT_MEMORY_ALIGNMENT);
@@ -51,6 +52,7 @@ void __CRTDECL operator delete[](void* p) noexcept
 {
     _aligned_free(p);
 }
+
 #endif
 
 //==================================================================================================================================================
@@ -279,18 +281,13 @@ bool SampleBase::CreateUserInterface(nri::Device& device, const nri::CoreInterfa
 
     // Pipeline
     {
-        nri::StaticSamplerDesc staticSamplerDesc = {};
-        staticSamplerDesc.samplerDesc.anisotropy = 1;
-        staticSamplerDesc.samplerDesc.addressModes = {nri::AddressMode::REPEAT, nri::AddressMode::REPEAT};
-        staticSamplerDesc.samplerDesc.magnification = nri::Filter::LINEAR;
-        staticSamplerDesc.samplerDesc.minification = nri::Filter::LINEAR;
-        staticSamplerDesc.samplerDesc.mip = nri::Filter::LINEAR;
-        staticSamplerDesc.registerIndex = 0;
-        staticSamplerDesc.visibility = nri::ShaderStage::FRAGMENT;
+        nri::DescriptorRangeDesc descriptorRanges[] =
+        {
+            {0, 1, nri::DescriptorType::TEXTURE, nri::ShaderStage::FRAGMENT},
+            {0, 1, nri::DescriptorType::SAMPLER, nri::ShaderStage::FRAGMENT},
+        };
 
-        nri::DescriptorRangeDesc descriptorRange = {0, 1, nri::DescriptorType::TEXTURE, nri::ShaderStage::FRAGMENT};
-
-        nri::DescriptorSetDesc descriptorSet = {&descriptorRange, 1, &staticSamplerDesc, 1};
+        nri::DescriptorSetDesc descriptorSet = {0, descriptorRanges, helper::GetCountOf(descriptorRanges)};
 
         nri::PushConstantDesc pushConstant = {};
         pushConstant.registerIndex = 0;
@@ -430,20 +427,28 @@ bool SampleBase::CreateUserInterface(nri::Device& device, const nri::CoreInterfa
     if (result != nri::Result::SUCCESS)
         return false;
 
-    // Descriptor
-    {
-        nri::Texture2DViewDesc texture2DViewDesc = {m_FontTexture, nri::Texture2DViewType::SHADER_RESOURCE_2D, format};
-        if (NRI->CreateTexture2DView(texture2DViewDesc, m_FontShaderResource) != nri::Result::SUCCESS)
-            return false;
-    }
+    // Descriptor - texture
+    nri::Texture2DViewDesc texture2DViewDesc = {m_FontTexture, nri::Texture2DViewType::SHADER_RESOURCE_2D, format};
+    if (NRI->CreateTexture2DView(texture2DViewDesc, m_FontShaderResource) != nri::Result::SUCCESS)
+        return false;
 
     utils::Texture texture;
     utils::LoadTextureFromMemory(format, fontTextureWidth, fontTextureHeight, fontPixels, texture);
 
-    nri::CommandQueue* commandQueue = nullptr;
-    NRI->GetCommandQueue(device, nri::CommandQueueType::GRAPHICS, commandQueue);
+    // Descriptor - sampler
+    nri::SamplerDesc samplerDesc = {};
+    samplerDesc.anisotropy = 1;
+    samplerDesc.addressModes = {nri::AddressMode::REPEAT, nri::AddressMode::REPEAT};
+    samplerDesc.magnification = nri::Filter::LINEAR;
+    samplerDesc.minification = nri::Filter::LINEAR;
+    samplerDesc.mip = nri::Filter::LINEAR;
+
+    if (NRI->CreateSampler(device, samplerDesc, m_Sampler) != nri::Result::SUCCESS)
+        return false;
 
     // Upload data
+    nri::CommandQueue* commandQueue = nullptr;
+    NRI->GetCommandQueue(device, nri::CommandQueueType::GRAPHICS, commandQueue);
     {
 
         nri::TextureSubresourceUploadDesc subresource = {};
@@ -466,22 +471,24 @@ bool SampleBase::CreateUserInterface(nri::Device& device, const nri::CoreInterfa
         nri::DescriptorPoolDesc descriptorPoolDesc = {};
         descriptorPoolDesc.descriptorSetMaxNum = 1;
         descriptorPoolDesc.textureMaxNum = 1;
-        descriptorPoolDesc.staticSamplerMaxNum = 1;
+        descriptorPoolDesc.samplerMaxNum = 1;
 
         if (NRI->CreateDescriptorPool(device, descriptorPoolDesc, m_DescriptorPool) != nri::Result::SUCCESS)
             return false;
     }
 
-    // Texture & sampler descriptor set
+    // Descriptor set
     {
         if (NRI->AllocateDescriptorSets(*m_DescriptorPool, *m_PipelineLayout, 0, &m_DescriptorSet, 1, nri::WHOLE_DEVICE_GROUP, 0) != nri::Result::SUCCESS)
             return false;
 
-        nri::DescriptorRangeUpdateDesc descriptorRangeUpdateDesc = {};
-        descriptorRangeUpdateDesc.descriptorNum = 1;
-        descriptorRangeUpdateDesc.descriptors = &m_FontShaderResource;
+        nri::DescriptorRangeUpdateDesc descriptorRangeUpdateDesc[] =
+        {
+            {&m_FontShaderResource, 1},
+            {&m_Sampler, 1}
+        };
 
-        NRI->UpdateDescriptorRanges(*m_DescriptorSet, nri::WHOLE_DEVICE_GROUP, 0, 1, &descriptorRangeUpdateDesc);
+        NRI->UpdateDescriptorRanges(*m_DescriptorSet, nri::WHOLE_DEVICE_GROUP, 0, helper::GetCountOf(descriptorRangeUpdateDesc), descriptorRangeUpdateDesc);
     }
 
     m_timePrev = glfwGetTime();
@@ -504,6 +511,9 @@ void SampleBase::DestroyUserInterface()
 
     if (m_PipelineLayout)
         NRI->DestroyPipelineLayout(*m_PipelineLayout);
+
+    if (m_Sampler)
+        NRI->DestroyDescriptor(*m_Sampler);
 
     if (m_FontShaderResource)
         NRI->DestroyDescriptor(*m_FontShaderResource);
@@ -634,7 +644,7 @@ void SampleBase::RenderUserInterface(nri::CommandBuffer& commandBuffer)
         NRI->CmdSetConstants(commandBuffer, 0, invScreenSize, sizeof(invScreenSize));
         NRI->CmdSetIndexBuffer(commandBuffer, *m_GeometryBuffer, indexBufferOffset, sizeof(ImDrawIdx) == 2 ? nri::IndexType::UINT16 : nri::IndexType::UINT32);
         NRI->CmdSetVertexBuffers(commandBuffer, 0, 1, &m_GeometryBuffer, &vertexBufferOffset);
-        NRI->CmdSetDescriptorSets(commandBuffer, 0, 1, &m_DescriptorSet, nullptr);
+        NRI->CmdSetDescriptorSet(commandBuffer, 0, *m_DescriptorSet, nullptr);
 
         const nri::Viewport viewport = { 0.0f, 0.0f, ImGui::GetIO().DisplaySize.x, ImGui::GetIO().DisplaySize.y, 0.0f, 1.0f };
         NRI->CmdSetViewports(commandBuffer, &viewport, 1);
@@ -865,7 +875,7 @@ void SampleBase::ReadCmdLineDefault(cmdline::parser& cmdLine)
     m_IgnoreDPI = cmdLine.exist("ignoreDPI");
 }
 
-void SampleBase::EnableMemoryLeakDetection(uint32_t breakOnAllocationIndex)
+void SampleBase::EnableMemoryLeakDetection([[maybe_unused]] uint32_t breakOnAllocationIndex)
 {
 #if( defined(_DEBUG) && defined(_WIN32) )
     int32_t flag = _CrtSetDbgFlag(_CRTDBG_REPORT_FLAG);
