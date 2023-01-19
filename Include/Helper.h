@@ -51,6 +51,4 @@ namespace helper
         inline ~Annotation()
         { m_NRI.CmdEndAnnotation(m_CommandBuffer); }
     };
-
-    bool FindPhysicalDeviceGroup(nri::PhysicalDeviceGroup& physicalDeviceGroup);
 }
