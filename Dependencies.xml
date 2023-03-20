@@ -8,7 +8,7 @@
     <package name="assimp" version="v5.0.1_glibc2.27-linux-aarch64" platforms="linux-aarch64" />
   </dependency>
   <dependency name="detex" linkPath="External/Detex">
-    <package name="detex" version="0.1.2-master-bcd7acfe" />
+    <package name="detex" version="0.1.2-master-934098a4" />
   </dependency>
   <dependency name="glfw" linkPath="External/Glfw">
     <package name="glfw" version="3.3.4_windows-x86_64" platforms="windows-x86_64" />

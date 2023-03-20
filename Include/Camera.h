@@ -22,6 +22,7 @@ struct CameraDesc
     float nearZ = 0.1f;
     float farZ = 10000.0f;
     float orthoRange = 0.0f;
+    float timeScale = 0.5f;
     bool isProjectionReversed = false;
     bool isLeftHanded = true;
     bool isCustomMatrixSet = false;
@@ -69,7 +70,6 @@ public:
     { return sizeof(CameraState); }
 
 public:
-    Timer m_Timer;
     CameraState state = {};
     CameraState statePrev = {};
     float m_IsOrtho = 0.0f;

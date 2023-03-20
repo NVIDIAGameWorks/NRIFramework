@@ -173,6 +173,8 @@ const nri::Window& SampleBase::GetWindow() const
 
 void SampleBase::GetCameraDescFromInputDevices(CameraDesc& cameraDesc)
 {
+    cameraDesc.timeScale = 0.025f * m_Timer.GetSmoothedFrameTime();
+
     if (!IsButtonPressed(Button::Right))
     {
         CursorMode(GLFW_CURSOR_NORMAL);
@@ -307,8 +309,8 @@ bool SampleBase::CreateUserInterface(nri::Device& device, const nri::CoreInterfa
         utils::ShaderCodeStorage shaderCodeStorage;
         nri::ShaderDesc shaderStages[] =
         {
-            utils::LoadShader(deviceDesc.graphicsAPI, "ImGUI.vs", shaderCodeStorage),
-            utils::LoadShader(deviceDesc.graphicsAPI, "ImGUI.fs", shaderCodeStorage),
+            utils::LoadShader(deviceDesc.graphicsAPI, "UI.vs", shaderCodeStorage),
+            utils::LoadShader(deviceDesc.graphicsAPI, "UI.fs", shaderCodeStorage),
         };
 
         nri::VertexStreamDesc vertexStreamDesc = {};
@@ -785,8 +787,6 @@ bool SampleBase::Create(int32_t argc, char** argv, const char* windowTitle)
     glfwSetScrollCallback(m_Window, GLFW_ScrollCallback);
     glfwShowWindow(m_Window);
 
-    printf("Ready!\n");
-
     return result;
 }
 
@@ -816,9 +816,20 @@ void SampleBase::RenderLoop()
         m_MousePosPrev = float2(float(cursorPosx), float(cursorPosy));
         m_MouseWheel = 0.0f;
         m_MouseDelta = float2(0.0f);
+
+        m_Timer.UpdateFrameTime();
     }
 
-    printf("Shutting down...\n");
+    printf(
+        "FPS:\n"
+        "  Last frame : %.2f fps (%.3f ms)\n"
+        "  Average    : %.2f fps (%.3f ms)\n"
+        "  Smoothed   : %.2f fps (%.3f ms)\n"
+        "Shutting down...\n",
+        1000.0f / m_Timer.GetFrameTime(), m_Timer.GetFrameTime(),
+        1000.0f / m_Timer.GetSmoothedFrameTime(), m_Timer.GetSmoothedFrameTime(),
+        1000.0f / m_Timer.GetVerySmoothedFrameTime(), m_Timer.GetVerySmoothedFrameTime()
+    );
 }
 
 void SampleBase::CursorMode(int32_t mode)

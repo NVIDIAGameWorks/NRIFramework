@@ -29,11 +29,6 @@ void Camera::Initialize(const float3& position, const float3& lookAt, bool isRel
 
 void Camera::Update(const CameraDesc& desc, uint32_t frameIndex)
 {
-    m_Timer.UpdateElapsedTimeSinceLastSave();
-    m_Timer.SaveCurrentTime();
-
-    float timeScale = 0.005f * m_Timer.GetSmoothedElapsedTime();
-
     uint32_t projFlags = desc.isProjectionReversed ? PROJ_REVERSED_Z : 0;
     projFlags |= desc.isLeftHanded ? PROJ_LEFT_HANDED : 0;
 
@@ -42,8 +37,7 @@ void Camera::Update(const CameraDesc& desc, uint32_t frameIndex)
     const float3 vUp = state.mWorldToView.GetRow1().To3d();
     const float3 vForward = state.mWorldToView.GetRow2().To3d();
 
-    float linearSpeed = 5.0f * timeScale;
-    float3 delta = desc.dLocal * linearSpeed;
+    float3 delta = desc.dLocal * desc.timeScale;
     delta.z *= desc.isLeftHanded ? 1.0f : -1.0f;
 
     state.globalPosition += ToDouble(vRight * delta.x);

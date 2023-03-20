@@ -8,4 +8,8 @@
 	url = https://github.com/NVIDIAGameWorks/NRI.git
 	branch = main
 	update = merge
-
+[submodule "External/ShaderMake"]
+	path = External/ShaderMake
+	url = https://github.com/NVIDIAGameWorks/ShaderMake.git
+	branch = main
+	update = merge

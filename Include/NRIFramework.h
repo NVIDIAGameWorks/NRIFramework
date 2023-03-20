@@ -11,8 +11,8 @@ license agreement from NVIDIA CORPORATION is strictly prohibited.
 #pragma once
 
 #define NRI_FRAMEWORK_VERSION_MAJOR 0
-#define NRI_FRAMEWORK_VERSION_MINOR 3
-#define NRI_FRAMEWORK_VERSION_DATE "20 December 2022"
+#define NRI_FRAMEWORK_VERSION_MINOR 4
+#define NRI_FRAMEWORK_VERSION_DATE "14 March 2023"
 #define NRI_FRAMEWORK 1
 
 // 3rd party
@@ -37,7 +37,7 @@ license agreement from NVIDIA CORPORATION is strictly prohibited.
 #include "Utils.h"
 
 // Settings
-constexpr nri::SPIRVBindingOffsets SPIRV_BINDING_OFFSETS = {100, 200, 300, 400}; // see ShaderCompilation.cmake
+constexpr nri::SPIRVBindingOffsets SPIRV_BINDING_OFFSETS = {100, 200, 300, 400}; // just ShaderMake defaults for simplicity
 constexpr bool D3D11_COMMANDBUFFER_EMULATION = false;
 constexpr uint32_t DEFAULT_MEMORY_ALIGNMENT = 16;
 constexpr uint32_t BUFFERED_FRAME_MAX_NUM = 3;
@@ -106,6 +106,7 @@ protected:
     std::string m_SceneFile = "ShaderBalls/ShaderBalls.obj";
     sFastRand m_FastRandState = {};
     Camera m_Camera;
+    Timer m_Timer;
     uint2 m_OutputResolution = {1280, 720};
     uint32_t m_VsyncInterval = 0;
     float m_MouseSensitivity = 1.0f;

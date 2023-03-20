@@ -274,4 +274,3 @@ namespace utils
 #define NRI_ABORT_ON_FALSE(result) \
     if (!(result)) \
         exit(1);
-

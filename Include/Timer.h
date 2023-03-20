@@ -7,18 +7,21 @@ class Timer
 public:
     Timer();
 
-    double GetTimeStamp();
-    void UpdateElapsedTimeSinceLastSave();
-    void SaveCurrentTime();
+    void UpdateFrameTime();
 
     // In milliseconds
-    inline float GetElapsedTime()
+    double GetTimeStamp() const;
+    
+    inline double GetLastFrameTimeStamp() const
+    { return m_Time * m_InvTicksPerMs; }
+
+    inline float GetFrameTime() const
     { return m_Delta; }
 
-    inline float GetSmoothedElapsedTime()
+    inline float GetSmoothedFrameTime() const
     { return m_SmoothedDelta; }
 
-    inline float GetVerySmoothedElapsedTime()
+    inline float GetVerySmoothedFrameTime() const
     { return m_VerySmoothedDelta; }
 
 private:
