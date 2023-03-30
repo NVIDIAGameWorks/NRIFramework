@@ -187,7 +187,7 @@ set_source_files_properties (${SHADERS} PROPERTIES VS_TOOL_OVERRIDE "None")
 
 if (WIN32)
     add_custom_target (${PROJECT_NAME}_Shaders ALL
-        COMMAND ShaderMake
+        COMMAND ShaderMake --useAPI
             --binary --flatten --stripReflection --compiler "${DXC_PATH}"
             --sourceDir "Shaders"
             -p DXIL --WX
@@ -195,7 +195,7 @@ if (WIN32)
             -o "${NRIF_SHADERS_PATH}"
             -I "Shaders"
             -D COMPILER_DXC
-        COMMAND ShaderMake
+        COMMAND ShaderMake --useAPI
             --binary --flatten --stripReflection --compiler "${DXC_SPIRV_PATH}"
             --sourceDir "Shaders"
             -p SPIRV --WX
@@ -204,7 +204,7 @@ if (WIN32)
             -I "Shaders"
             -D COMPILER_DXC
             -D VULKAN
-        COMMAND ShaderMake
+        COMMAND ShaderMake --useAPI
             --binary --flatten --stripReflection --compiler "${FXC_PATH}"
             --sourceDir "Shaders"
             -p DXBC --WX

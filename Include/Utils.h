@@ -20,8 +20,11 @@ namespace utils
 {
     struct Texture;
     struct Scene;
+
     typedef std::vector<std::vector<uint8_t>> ShaderCodeStorage;
     typedef void* Mip;
+
+    constexpr uint32_t InvalidIndex = uint32_t(-1);
 
     enum StaticTexture : uint32_t
     {
@@ -55,13 +58,12 @@ namespace utils
     nri::ShaderDesc LoadShader(nri::GraphicsAPI graphicsAPI, const std::string& path, ShaderCodeStorage& storage, const char* entryPointName = nullptr);
     bool LoadTexture(const std::string& path, Texture& texture, bool computeAvgColorAndAlphaMode = false);
     void LoadTextureFromMemory(nri::Format format, uint32_t width, uint32_t height, const uint8_t *pixels, Texture &texture);
-    bool LoadScene(const std::string& path, Scene& scene, bool simpleOIT = false, const std::vector<float3>& instanceData = {float3(0.0f, 0.0f, 0.0f), float3(0.0f, 0.0f, 0.0f) });
+    bool LoadScene(const std::string& path, Scene& scene, bool isParentAnimated, bool simpleOIT);
 
     struct Texture
     {
         Mip* mips = nullptr;
         std::string name;
-        float4 avgColor = float4::Zero();
         uint64_t hash = 0;
         AlphaMode alphaMode = AlphaMode::OPAQUE;
         nri::Format format = nri::Format::UNKNOWN;
@@ -106,8 +108,6 @@ namespace utils
 
     struct Material
     {
-        float4 avgBaseColor;
-        float4 avgSpecularColor;
         uint32_t instanceOffset;
         uint32_t instanceNum;
         uint32_t diffuseMapIndex;
@@ -135,21 +135,24 @@ namespace utils
 
     struct Instance
     {
-        float4x4 rotation;
-        float4x4 rotationPrev;
-        double3 position;
-        double3 positionPrev;
-        uint32_t meshIndex;
-        uint32_t materialIndex;
+        float4x4 rotation = float4x4::Identity();
+        float4x4 rotationPrev = float4x4::Identity();
+        double3 position = double3::Zero();
+        double3 positionPrev = double3::Zero();
+        float3 scale = float3(1.0f); // TODO: needed to generate hulls representing inner glass surfaces
+        uint32_t meshIndex = InvalidIndex;
+        uint32_t materialIndex = InvalidIndex;
+        bool allowUpdate = false; // if "false" will be merged into the monolithic BLAS together with other static geometry
     };
 
     struct Mesh
     {
-        cBoxf aabb;
-        uint32_t vertexOffset;
-        uint32_t indexOffset;
-        uint32_t indexNum;
-        uint32_t vertexNum;
+        cBoxf aabb; // must be manually adjusted by instance.rotation.GetScale()
+        uint32_t vertexOffset = 0;
+        uint32_t indexOffset = 0;
+        uint32_t indexNum = 0;
+        uint32_t vertexNum = 0;
+        uint32_t blasIndex = InvalidIndex; // BLAS index for dynamic geometry in a user controlled array
     };
 
     struct Vertex
@@ -193,12 +196,9 @@ namespace utils
         std::vector<uint32_t> instances;
         float4x4 mTransform = float4x4::Identity();
         uint64_t hash = 0;
-        uint32_t animationNode = uint32_t(-1);
+        uint32_t animationNode = InvalidIndex;
 
-        inline bool HasAnimation() const
-        { return animationNode != uint32_t(-1); }
-
-        void Animate(utils::Scene& scene, std::vector<AnimationNode>& animationNodes, const float4x4& parentTransform, float4x4* outTransform = nullptr);
+        void Animate(utils::Scene& scene, std::vector<AnimationNode>& animationNodes, const float4x4& parentTransform, bool isParentAnimated, float4x4* outTransform = nullptr);
     };
 
     struct Animation
@@ -219,9 +219,7 @@ namespace utils
     struct Scene
     {
         ~Scene()
-        {
-            UnloadTextureData();
-        }
+        { UnloadTextureData(); }
 
         // Transient resources - texture & geometry data (can be unloaded after uploading on GPU)
         std::vector<utils::Texture*> textures;
@@ -239,7 +237,7 @@ namespace utils
         float4x4 mSceneToWorld = float4x4::Identity();
         cBoxf aabb;
 
-        void Animate(float animationSpeed, float elapsedTime, float& animationProgress, uint32_t animationID, float4x4* outCameraTransform = nullptr);
+        void Animate(float animationSpeed, float elapsedTime, float& animationProgress, uint32_t animationID, bool isParentAnimated, float4x4* outCameraTransform);
 
         inline void UnloadTextureData()
         {

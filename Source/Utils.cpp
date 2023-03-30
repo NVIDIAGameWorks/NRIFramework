@@ -512,8 +512,8 @@ bool utils::LoadTexture(const std::string& path, Texture& texture, bool computeA
         uint8_t *rgba8 = lastMip->data;
         if (lastMip->format != DETEX_PIXEL_FORMAT_RGBA8)
         {
+            // Convert to RGBA8 if the texture is compressed
             image.resize(lastMip->width * lastMip->height * detexGetPixelSize(DETEX_PIXEL_FORMAT_RGBA8));
-            // Converts to RGBA8 if the texture is not compressed
             detexDecompressTextureLinear(lastMip, &image[0], DETEX_PIXEL_FORMAT_RGBA8);
             rgba8 = &image[0];
         }
@@ -524,18 +524,15 @@ bool utils::LoadTexture(const std::string& path, Texture& texture, bool computeA
         for (size_t i = 0; i < pixelNum; i++)
             avgColor += Packed::uint_to_uf4<8, 8, 8, 8>(*(uint32_t*)(rgba8 + i * 4));
         avgColor /= float(pixelNum);
-        texture.avgColor = avgColor;
 
         if (texture.alphaMode != AlphaMode::PREMULTIPLIED && avgColor.w < 254.5f / 255.0f)
-            texture.alphaMode = avgColor.w == 0.0f ? AlphaMode::OFF : AlphaMode::TRANSPARENT;
+            texture.alphaMode = AlphaMode::TRANSPARENT;
 
-        // Useful to find a texture which is TRANSPARENT but needs to be OPAQUE or PREMULTIPLIED
-        /*if (texture.alphaMode == AlphaMode::TRANSPARENT || texture.alphaMode == AlphaMode::OFF)
+        if (texture.alphaMode == AlphaMode::TRANSPARENT && avgColor.w == 0.0f)
         {
-            char s[1024];
-            sprintf(s, "%s: %s\n", texture.alphaMode == AlphaMode::OFF ? "OFF" : "TRANSPARENT", path.c_str());
-            OutputDebugStringA(s);
-        }*/
+            printf("WARNING: Texture '%s' is fully transparent!\n", path.c_str());
+            texture.alphaMode = AlphaMode::OFF;
+        }
     }
 
     return true;
@@ -554,11 +551,10 @@ void utils::LoadTextureFromMemory(nri::Format format, uint32_t width, uint32_t h
     texture.mips = (Mip*)dTexture;
 }
 
-bool utils::LoadScene(const std::string& path, Scene& scene, bool simpleOIT, const std::vector<float3>& instanceData)
+bool utils::LoadScene(const std::string& path, Scene& scene, bool isParentAnimated, bool simpleOIT)
 {
     printf("Loading scene '%s'...\n", GetFileName(path));
 
-    const uint32_t globalInstanceCount = ((uint32_t)instanceData.size() / 2);
     constexpr uint32_t MAX_INDEX = 65535;
 
     // Taken from Falcor
@@ -601,8 +597,6 @@ bool utils::LoadScene(const std::string& path, Scene& scene, bool simpleOIT, con
         instanceNum = 0;
         for (uint32_t j = 0; j < helper::GetCountOf(nodesByMeshID); j++)
             instanceNum += helper::GetCountOf(nodesByMeshID[j]);
-
-        instanceNum *= globalInstanceCount;
 
         scene.mSceneToWorld.SetupByRotationX( Pi(0.5f) );
     }
@@ -657,9 +651,9 @@ bool utils::LoadScene(const std::string& path, Scene& scene, bool simpleOIT, con
         {
             std::vector<NodeData>& relatedNodes = nodesByMeshID[sortedMeshIndex];
 
-            for (uint32_t z = 0; z < helper::GetCountOf(relatedNodes); z++)
+            for (uint32_t j = 0; j < helper::GetCountOf(relatedNodes); j++)
             {
-                const aiMatrix4x4& aiTransform = relatedNodes[z].transform;
+                const aiMatrix4x4& aiTransform = relatedNodes[j].transform;
 
                 float4x4 transform
                 (
@@ -674,42 +668,32 @@ bool utils::LoadScene(const std::string& path, Scene& scene, bool simpleOIT, con
 
                 transform.SetTranslation( float3::Zero() );
 
-                for (uint32_t j = 0; j < globalInstanceCount; j++)
+                Instance& instance = scene.instances[nodeInstanceOffset];
+                instance.meshIndex = meshIndex;
+                instance.position = position;
+                instance.rotation = transform;
+                instance.allowUpdate = isParentAnimated;
+
+                std::map<const aiNode*, std::vector<uint32_t>>::iterator nodeToInstIt = nodeToInstanceMap.find(relatedNodes[j].node);
+                if (nodeToInstIt != nodeToInstanceMap.end())
+                    nodeToInstIt->second.push_back(nodeInstanceOffset);
+                else
                 {
-                    float3 instanceRotation = DegToRad(instanceData[j * 2 + 1]);
-
-                    float4x4 mInstanceRotation;
-                    mInstanceRotation.SetupByRotationYPR(instanceRotation.x, instanceRotation.y, instanceRotation.z);
-
-                    Instance& instance = scene.instances[nodeInstanceOffset];
-                    instance.meshIndex = meshIndex;
-                    instance.position = position + ToDouble(instanceData[j * 2]);
-                    instance.rotationPrev = float4x4::Identity();
-                    instance.rotation = mInstanceRotation * transform;
-
-                    std::map<const aiNode*, std::vector<uint32_t>>::iterator nodeToInstIt = nodeToInstanceMap.find(relatedNodes[z].node);
-                    if (nodeToInstIt != nodeToInstanceMap.end())
-                        nodeToInstIt->second.push_back(nodeInstanceOffset);
-                    else
-                    {
-                        std::vector<uint32_t> tmpVector = { nodeInstanceOffset };
-                        nodeToInstanceMap.insert( std::make_pair(relatedNodes[z].node, tmpVector) );
-                    }
-
-                    nodeInstanceOffset++;
+                    std::vector<uint32_t> tmpVector = { nodeInstanceOffset };
+                    nodeToInstanceMap.insert( std::make_pair(relatedNodes[j].node, tmpVector) );
                 }
-            }
 
-            uint32_t instancesCreated = helper::GetCountOf(relatedNodes) * globalInstanceCount;
-            material->instanceNum += instancesCreated;
+                nodeInstanceOffset++;
+                material->instanceNum++;
+            }
         }
         else
         {
-            material->instanceNum++;
             Instance& instance = scene.instances[instanceOffset + i];
             instance.meshIndex = meshIndex;
-            instance.rotation = float4x4::Identity();
-            instance.rotationPrev = float4x4::Identity();
+            instance.allowUpdate = isParentAnimated;
+
+            material->instanceNum++;
         }
 
         if (material != prevMaterial)
@@ -1026,9 +1010,8 @@ bool utils::LoadScene(const std::string& path, Scene& scene, bool simpleOIT, con
             textureIndices[j] = StaticTexture::Black;
             if (type == aiTextureType_NORMALS)
                 textureIndices[j] = StaticTexture::FlatNormal;
-            // OPTIONAL - useful for debug:
-            //else if (type == aiTextureType_DIFFUSE)
-            //    textureIndices[j] = StaticTexture::Invalid;
+            else if (type == aiTextureType_DIFFUSE)
+                textureIndices[j] = StaticTexture::Invalid;
 
             if (assimpMaterial->GetTexture(type, 0, &str) == AI_SUCCESS)
             {
@@ -1063,28 +1046,8 @@ bool utils::LoadScene(const std::string& path, Scene& scene, bool simpleOIT, con
         }
 
         const Texture* diffuseTexture = scene.textures[material.diffuseMapIndex];
-        const Texture* specularTexture = scene.textures[material.specularMapIndex];
-        const Texture* emissionTexture = scene.textures[material.emissiveMapIndex];
-
         material.alphaMode = diffuseTexture->alphaMode;
-        material.avgSpecularColor = specularTexture->avgColor;
-        material.isEmissive = Dot33(emissionTexture->avgColor.xmm, float3(1.0f)) != 0.0f;
-
-        if (material.isEmissive)
-        {
-            float4 baseColor = diffuseTexture->avgColor;
-            baseColor = Pow( baseColor, float4( 2.2f ) );
-
-            float4 emissionColor = emissionTexture->avgColor;
-            emissionColor = Pow( emissionColor, float4( 2.2f ) );
-
-            emissionColor *= (baseColor + 0.01f) / (Max(baseColor.x, Max(baseColor.y, baseColor.z)) + 0.01f);
-            emissionColor = Pow( emissionColor, float4( 1.0f / 2.2f ) );
-
-            material.avgBaseColor = emissionColor;
-        }
-        else
-            material.avgBaseColor = diffuseTexture->avgColor;
+        material.isEmissive = material.emissiveMapIndex != StaticTexture::Black;
     }
 
     // Sort materials by transparency type
@@ -1121,7 +1084,15 @@ bool utils::LoadScene(const std::string& path, Scene& scene, bool simpleOIT, con
     if (simpleOIT && scene.materialsGroups.size() == 3)
         scene.materialsGroups.push_back(scene.materialsGroups.back());
 
+    // Cleanup
     aiReleaseImport(&aiScene);
+
+    // Run animation once and update "allowUpdate" state
+    for (uint32_t i = 0; i < scene.animations.size(); i++)
+    {
+        float unused = 0.0f;
+        scene.Animate(0.0f, 0.0f, unused, i, isParentAnimated, nullptr);
+    }
 
     return true;
 }
@@ -1174,60 +1145,59 @@ void utils::AnimationNode::Animate(float time)
     mTransform = mTranslation * (mRotation * mScale);
 }
 
-void utils::NodeTree::Animate(Scene& scene, std::vector<AnimationNode>& animationNodes, const float4x4& parentTransform, float4x4* outTransform)
+void utils::NodeTree::Animate(Scene& scene, std::vector<AnimationNode>& animationNodes, const float4x4& parentTransform, bool isParentAnimated, float4x4* outTransform)
 {
-    const float4x4& transform = HasAnimation() ? animationNodes[animationNode].mTransform : mTransform;
+    bool isNodeAnimated = isParentAnimated || (animationNode != InvalidIndex);
+
+    const float4x4& transform = animationNode != InvalidIndex ? animationNodes[animationNode].mTransform : mTransform;
     float4x4 combinedTransform = parentTransform * transform;
 
     for (NodeTree& child : children)
-        child.Animate(scene, animationNodes, combinedTransform, outTransform);
+        child.Animate(scene, animationNodes, combinedTransform, isNodeAnimated, outTransform);
 
     if (outTransform && children.empty())
         *outTransform = combinedTransform;
 
-    if (!instances.empty())
-    {
-        double3 position = ToDouble( combinedTransform.GetCol3().To3d() );
-        combinedTransform.SetTranslation( float3::Zero() );
+    double3 position = ToDouble( combinedTransform.GetCol3().To3d() );
+    combinedTransform.SetTranslation( float3::Zero() );
 
-        for (const uint32_t& instanceId : instances)
-        {
-            Instance& sceneInstance = scene.instances[instanceId];
-            sceneInstance.rotation = combinedTransform;
-            sceneInstance.position = position;
-        }
+    for (uint32_t instanceIndex : instances)
+    {
+        Instance& instance = scene.instances[instanceIndex];
+        instance.rotation = combinedTransform;
+        instance.position = position;
+        instance.allowUpdate = isNodeAnimated;
     }
 }
 
-void utils::Scene::Animate(float animationSpeed, float elapsedTime, float& animationProgress, uint32_t animationID, float4x4* outCameraTransform)
+void utils::Scene::Animate(float animationSpeed, float elapsedTime, float& animationProgress, uint32_t animationID, bool isParentAnimated, float4x4* outCameraTransform)
 {
-    if (animations.empty())
-        return;
-
-    animationID = animationID > helper::GetCountOf(animations) ? helper::GetCountOf(animations) : animationID;
     Animation& selectedAnimation = animations[animationID];
 
     // Update animation
-    const float sceneAnimationDelta = selectedAnimation.durationMs == 0.0f ? 0.0f : animationSpeed / selectedAnimation.durationMs;
+    float animationDelta = selectedAnimation.durationMs == 0.0f ? 0.0f : animationSpeed / selectedAnimation.durationMs;
 
-    float normalizedTime = animationProgress * 0.01f;
-    normalizedTime += elapsedTime * sceneAnimationDelta * selectedAnimation.sign;
+    float normalizedTime = animationProgress * 0.01f + elapsedTime * animationDelta * selectedAnimation.sign;
     if (normalizedTime >= 1.0f || normalizedTime < 0.0f)
     {
         selectedAnimation.sign = -selectedAnimation.sign;
         normalizedTime = Saturate(normalizedTime);
     }
+
     animationProgress = normalizedTime * 100.0f;
 
+    // Update animation nodes
     for (AnimationNode& animationNode : selectedAnimation.animationNodes)
         animationNode.Animate(normalizedTime);
 
-    selectedAnimation.rootNode.Animate(*this, selectedAnimation.animationNodes, mSceneToWorld);
+    // Recursively update instances in animation nodes
+    selectedAnimation.rootNode.Animate(*this, selectedAnimation.animationNodes, mSceneToWorld, isParentAnimated);
 
+    // Update camera animation (if requested)
     if (outCameraTransform)
     {
         float4x4 transform;
-        selectedAnimation.cameraNode.Animate(*this, selectedAnimation.animationNodes, float4x4::Identity(), &transform);
+        selectedAnimation.cameraNode.Animate(*this, selectedAnimation.animationNodes, float4x4::Identity(), isParentAnimated, &transform);
 
         // Inverse 3x3 rotation (without scene-to-world rotation)
         float3 pos = transform.GetCol3().xmm;
