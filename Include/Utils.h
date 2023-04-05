@@ -28,8 +28,8 @@ namespace utils
 
     enum StaticTexture : uint32_t
     {
-        Invalid,
         Black,
+        Invalid,
         FlatNormal,
         ScramblingRanking1spp,
         SobolSequence
@@ -58,7 +58,7 @@ namespace utils
     nri::ShaderDesc LoadShader(nri::GraphicsAPI graphicsAPI, const std::string& path, ShaderCodeStorage& storage, const char* entryPointName = nullptr);
     bool LoadTexture(const std::string& path, Texture& texture, bool computeAvgColorAndAlphaMode = false);
     void LoadTextureFromMemory(nri::Format format, uint32_t width, uint32_t height, const uint8_t *pixels, Texture &texture);
-    bool LoadScene(const std::string& path, Scene& scene, bool isParentAnimated, bool simpleOIT);
+    bool LoadScene(const std::string& path, Scene& scene, bool allowUpdate);
 
     struct Texture
     {
@@ -100,22 +100,13 @@ namespace utils
         { return format; }
     };
 
-    struct MaterialGroup
-    {
-        uint32_t materialOffset;
-        uint32_t materialNum;
-    };
-
     struct Material
     {
-        uint32_t instanceOffset;
-        uint32_t instanceNum;
-        uint32_t diffuseMapIndex;
-        uint32_t specularMapIndex;
-        uint32_t normalMapIndex;
-        uint32_t emissiveMapIndex;
-        AlphaMode alphaMode;
-        bool isEmissive;
+        uint32_t diffuseMapIndex = StaticTexture::Black; // TODO: use StaticTexture::Invalid for debug purposes
+        uint32_t specularMapIndex = StaticTexture::Black;
+        uint32_t normalMapIndex = StaticTexture::FlatNormal;
+        uint32_t emissiveMapIndex = StaticTexture::Black;
+        AlphaMode alphaMode = AlphaMode::OPAQUE;
 
         inline bool IsOpaque() const
         { return alphaMode == AlphaMode::OPAQUE; }
@@ -130,7 +121,7 @@ namespace utils
         { return alphaMode == AlphaMode::OFF; }
 
         inline bool IsEmissive() const
-        { return isEmissive; }
+        { return emissiveMapIndex != StaticTexture::Black; }
     };
 
     struct Instance
@@ -187,7 +178,7 @@ namespace utils
         std::vector<float> scaleKeys;
         float4x4 mTransform = float4x4::Identity();
 
-        void Animate(float time);
+        void Update(float time);
     };
 
     struct NodeTree
@@ -196,9 +187,10 @@ namespace utils
         std::vector<uint32_t> instances;
         float4x4 mTransform = float4x4::Identity();
         uint64_t hash = 0;
-        uint32_t animationNode = InvalidIndex;
+        uint32_t animationNodeIndex = InvalidIndex;
 
-        void Animate(utils::Scene& scene, std::vector<AnimationNode>& animationNodes, const float4x4& parentTransform, bool isParentAnimated, float4x4* outTransform = nullptr);
+        void Animate(utils::Scene& scene, const std::vector<AnimationNode>& animationNodes, const float4x4& parentTransform, float4x4* outTransform = nullptr);
+        void SetAllowUpdate(utils::Scene& scene, bool allowUpdate);
     };
 
     struct Animation
@@ -229,7 +221,6 @@ namespace utils
         std::vector<Primitive> primitives;
 
         // Other resources
-        std::vector<MaterialGroup> materialsGroups; // 0 - opaque, 1 - two-sided, alpha opaque, 2 - transparent (back faces), 3 - transparent (front faces)
         std::vector<Material> materials;
         std::vector<Instance> instances;
         std::vector<Mesh> meshes;
@@ -237,7 +228,7 @@ namespace utils
         float4x4 mSceneToWorld = float4x4::Identity();
         cBoxf aabb;
 
-        void Animate(float animationSpeed, float elapsedTime, float& animationProgress, uint32_t animationID, bool isParentAnimated, float4x4* outCameraTransform);
+        void Animate(float animationSpeed, float elapsedTime, float& animationProgress, uint32_t animationIndex, float4x4* outCameraTransform);
 
         inline void UnloadTextureData()
         {

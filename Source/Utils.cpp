@@ -200,7 +200,7 @@ static void BindNodesToMeshID(aiNode* node, aiMatrix4x4 parentTransform, std::ve
         BindNodesToMeshID(node->mChildren[i], transform, vector);
 }
 
-static void ExtractNodeTree(const aiNode* node, std::map<const aiNode*, std::vector<uint32_t>>& nodeToInstanceMap, utils::NodeTree& animationIstance)
+static void ExtractNodeTree(const aiNode* node, std::map<const aiNode*, std::vector<uint32_t>>& nodeToInstanceMap, utils::NodeTree& animationInstance)
 {
     float4x4 transform = float4x4(
         node->mTransformation.a1, node->mTransformation.a2, node->mTransformation.a3, node->mTransformation.a4,
@@ -220,7 +220,7 @@ static void ExtractNodeTree(const aiNode* node, std::map<const aiNode*, std::vec
     for (uint32_t i = 0; i < node->mNumChildren; i++)
         ExtractNodeTree(node->mChildren[i], nodeToInstanceMap, parentInstance.children[i]);
 
-    animationIstance = parentInstance;
+    animationInstance = parentInstance;
 }
 
 inline float SafeLinearstep(float a, float b, float x)
@@ -551,7 +551,7 @@ void utils::LoadTextureFromMemory(nri::Format format, uint32_t width, uint32_t h
     texture.mips = (Mip*)dTexture;
 }
 
-bool utils::LoadScene(const std::string& path, Scene& scene, bool isParentAnimated, bool simpleOIT)
+bool utils::LoadScene(const std::string& path, Scene& scene, bool allowUpdate)
 {
     printf("Loading scene '%s'...\n", GetFileName(path));
 
@@ -627,7 +627,6 @@ bool utils::LoadScene(const std::string& path, Scene& scene, bool isParentAnimat
     uint32_t totalVertices = (uint32_t)scene.vertices.size();
     uint32_t indexOffset = totalIndices;
     uint32_t vertexOffset = totalVertices;
-    const Material* prevMaterial = &scene.materials[materialOffset];
 
     uint32_t nodeInstanceOffset = instanceOffset;
     for (uint32_t i = 0; i < aiScene.mNumMeshes; i++)
@@ -645,11 +644,10 @@ bool utils::LoadScene(const std::string& path, Scene& scene, bool isParentAnimat
         totalIndices += mesh.indexNum;
         totalVertices += mesh.vertexNum;
 
-        const uint32_t materialIndex = materialOffset + sortedMaterials[i].second;
-        Material* material = &scene.materials[materialIndex];
+        uint32_t materialIndex = materialOffset + sortedMaterials[i].second;
         if (loadFromNodes)
         {
-            std::vector<NodeData>& relatedNodes = nodesByMeshID[sortedMeshIndex];
+            const std::vector<NodeData>& relatedNodes = nodesByMeshID[sortedMeshIndex];
 
             for (uint32_t j = 0; j < helper::GetCountOf(relatedNodes); j++)
             {
@@ -665,14 +663,14 @@ bool utils::LoadScene(const std::string& path, Scene& scene, bool isParentAnimat
                 transform = scene.mSceneToWorld * transform;
 
                 double3 position = ToDouble( transform.GetCol3().To3d() );
-
                 transform.SetTranslation( float3::Zero() );
 
                 Instance& instance = scene.instances[nodeInstanceOffset];
                 instance.meshIndex = meshIndex;
                 instance.position = position;
                 instance.rotation = transform;
-                instance.allowUpdate = isParentAnimated;
+                instance.materialIndex = materialIndex;
+                instance.allowUpdate = allowUpdate;
 
                 std::map<const aiNode*, std::vector<uint32_t>>::iterator nodeToInstIt = nodeToInstanceMap.find(relatedNodes[j].node);
                 if (nodeToInstIt != nodeToInstanceMap.end())
@@ -684,22 +682,15 @@ bool utils::LoadScene(const std::string& path, Scene& scene, bool isParentAnimat
                 }
 
                 nodeInstanceOffset++;
-                material->instanceNum++;
             }
         }
         else
         {
             Instance& instance = scene.instances[instanceOffset + i];
             instance.meshIndex = meshIndex;
-            instance.allowUpdate = isParentAnimated;
-
-            material->instanceNum++;
+            instance.materialIndex = materialIndex;
+            instance.allowUpdate = allowUpdate;
         }
-
-        if (material != prevMaterial)
-            material->instanceOffset = prevMaterial->instanceOffset + prevMaterial->instanceNum;
-
-        prevMaterial = material;
     }
 
     // Animation
@@ -729,7 +720,7 @@ bool utils::LoadScene(const std::string& path, Scene& scene, bool isParentAnimat
                 while (!nextNode->children.empty())
                     nextNode = &nextNode->children[0];
 
-                nextNode->animationNode = i;
+                nextNode->animationNodeIndex = i;
                 nextNode->children.push_back( NodeTree() );
 
                 isCamera = true;
@@ -770,7 +761,7 @@ bool utils::LoadScene(const std::string& path, Scene& scene, bool isParentAnimat
             {
                 if (hash == sceneNode.hash)
                 {
-                    sceneNode.animationNode = i;
+                    sceneNode.animationNodeIndex = i;
                     return;
                 }
 
@@ -953,19 +944,19 @@ bool utils::LoadScene(const std::string& path, Scene& scene, bool isParentAnimat
     size_t newCapacity = scene.textures.size() + textureNum;
     scene.textures.reserve(newCapacity);
 
-    // StaticTexture::Invalid
-    {
-        Texture* texture = new Texture;
-        const std::string& texPath = GetFullPath("checkerboard0.dds", DataFolder::TEXTURES);
-        NRI_ABORT_ON_FALSE( LoadTexture(texPath, *texture, true) );
-        scene.textures.push_back(texture);
-    }
-
     // StaticTexture::Black
     {
         Texture* texture = new Texture;
         const std::string& texPath = GetFullPath("black.png", DataFolder::TEXTURES);
         NRI_ABORT_ON_FALSE( LoadTexture(texPath, *texture) );
+        scene.textures.push_back(texture);
+    }
+
+    // StaticTexture::Invalid
+    {
+        Texture* texture = new Texture;
+        const std::string& texPath = GetFullPath("checkerboard0.dds", DataFolder::TEXTURES);
+        NRI_ABORT_ON_FALSE( LoadTexture(texPath, *texture, true) );
         scene.textures.push_back(texture);
     }
 
@@ -999,20 +990,12 @@ bool utils::LoadScene(const std::string& path, Scene& scene, bool isParentAnimat
     for (uint32_t i = 0; i < aiScene.mNumMaterials; i++)
     {
         Material& material = scene.materials[materialOffset + i];
-        material.instanceOffset += instanceOffset;
+        uint32_t* textureIndices = &material.diffuseMapIndex;
 
         const aiMaterial* assimpMaterial = aiScene.mMaterials[i];
-        uint32_t* textureIndices = &material.diffuseMapIndex;
         for (size_t j = 0; j < gSupportedTextureTypes.size(); j++)
         {
-            const aiTextureType type = gSupportedTextureTypes[j];
-
-            textureIndices[j] = StaticTexture::Black;
-            if (type == aiTextureType_NORMALS)
-                textureIndices[j] = StaticTexture::FlatNormal;
-            else if (type == aiTextureType_DIFFUSE)
-                textureIndices[j] = StaticTexture::Invalid;
-
+            aiTextureType type = gSupportedTextureTypes[j];
             if (assimpMaterial->GetTexture(type, 0, &str) == AI_SUCCESS)
             {
                 std::string texPath = baseDir + str.data;
@@ -1047,57 +1030,21 @@ bool utils::LoadScene(const std::string& path, Scene& scene, bool isParentAnimat
 
         const Texture* diffuseTexture = scene.textures[material.diffuseMapIndex];
         material.alphaMode = diffuseTexture->alphaMode;
-        material.isEmissive = material.emissiveMapIndex != StaticTexture::Black;
     }
-
-    // Sort materials by transparency type
-    const auto sortPred = [](const Material& a, const Material& b)
-    { return a.alphaMode < b.alphaMode; };
-
-    std::sort(scene.materials.begin(), scene.materials.end(), sortPred);
-
-    // Merge materials into groups
-    scene.materialsGroups.clear();
-    AlphaMode prevAlphaMode = AlphaMode(-1);
-    for (size_t i = 0; i < scene.materials.size(); i++)
-    {
-        const Material& material = scene.materials[i];
-
-        const AlphaMode alphaMode = material.alphaMode;
-        if (alphaMode != prevAlphaMode)
-        {
-            scene.materialsGroups.push_back( {(uint32_t)i, 0} );
-            prevAlphaMode = alphaMode;
-        }
-        MaterialGroup& materialGroup = scene.materialsGroups.back();
-        materialGroup.materialNum++;
-
-        // Bind materials here since they get sorted above
-        for (uint32_t j = 0; j < material.instanceNum; j++)
-        {
-            uint32_t index = material.instanceOffset + j;
-            scene.instances[index].materialIndex = (uint32_t)i;
-        }
-    }
-
-    // Duplicate TRANSPARENT for simple OIT - render back faces, render front faces
-    if (simpleOIT && scene.materialsGroups.size() == 3)
-        scene.materialsGroups.push_back(scene.materialsGroups.back());
 
     // Cleanup
     aiReleaseImport(&aiScene);
 
-    // Run animation once and update "allowUpdate" state
-    for (uint32_t i = 0; i < scene.animations.size(); i++)
-    {
-        float unused = 0.0f;
-        scene.Animate(0.0f, 0.0f, unused, i, isParentAnimated, nullptr);
-    }
+    // TODO: some sorting can be added here (remapping is needed)
+
+    // Set "Instance::allowUpdate" state
+    for (Animation& animation : scene.animations)
+        animation.rootNode.SetAllowUpdate(scene, allowUpdate);
 
     return true;
 }
 
-void utils::AnimationNode::Animate(float time)
+void utils::AnimationNode::Update(float time)
 {
     float3 scale = scaleValues.back();
     if (time < scaleKeys.back())
@@ -1145,15 +1092,27 @@ void utils::AnimationNode::Animate(float time)
     mTransform = mTranslation * (mRotation * mScale);
 }
 
-void utils::NodeTree::Animate(Scene& scene, std::vector<AnimationNode>& animationNodes, const float4x4& parentTransform, bool isParentAnimated, float4x4* outTransform)
+void utils::NodeTree::SetAllowUpdate(utils::Scene& scene, bool parentAllowUpdate)
 {
-    bool isNodeAnimated = isParentAnimated || (animationNode != InvalidIndex);
+    bool allowUpdate = parentAllowUpdate || animationNodeIndex != InvalidIndex;
 
-    const float4x4& transform = animationNode != InvalidIndex ? animationNodes[animationNode].mTransform : mTransform;
+    for (NodeTree& child : children)
+        child.SetAllowUpdate(scene, allowUpdate);
+
+    for (uint32_t instanceIndex : instances)
+    {
+        Instance& instance = scene.instances[instanceIndex];
+        instance.allowUpdate = allowUpdate;
+    }
+}
+
+void utils::NodeTree::Animate(Scene& scene, const std::vector<AnimationNode>& animationNodes, const float4x4& parentTransform, float4x4* outTransform)
+{
+    const float4x4& transform = animationNodeIndex != InvalidIndex ? animationNodes[animationNodeIndex].mTransform : mTransform;
     float4x4 combinedTransform = parentTransform * transform;
 
     for (NodeTree& child : children)
-        child.Animate(scene, animationNodes, combinedTransform, isNodeAnimated, outTransform);
+        child.Animate(scene, animationNodes, combinedTransform, outTransform);
 
     if (outTransform && children.empty())
         *outTransform = combinedTransform;
@@ -1166,38 +1125,37 @@ void utils::NodeTree::Animate(Scene& scene, std::vector<AnimationNode>& animatio
         Instance& instance = scene.instances[instanceIndex];
         instance.rotation = combinedTransform;
         instance.position = position;
-        instance.allowUpdate = isNodeAnimated;
     }
 }
 
-void utils::Scene::Animate(float animationSpeed, float elapsedTime, float& animationProgress, uint32_t animationID, bool isParentAnimated, float4x4* outCameraTransform)
+void utils::Scene::Animate(float animationSpeed, float elapsedTime, float& animationProgress, uint32_t animationIndex, float4x4* outCameraTransform)
 {
-    Animation& selectedAnimation = animations[animationID];
+    Animation& animation = animations[animationIndex];
 
-    // Update animation
-    float animationDelta = selectedAnimation.durationMs == 0.0f ? 0.0f : animationSpeed / selectedAnimation.durationMs;
+    // Time
+    float animationDelta = animation.durationMs == 0.0f ? 0.0f : animationSpeed / animation.durationMs;
 
-    float normalizedTime = animationProgress * 0.01f + elapsedTime * animationDelta * selectedAnimation.sign;
-    if (normalizedTime >= 1.0f || normalizedTime < 0.0f)
+    float t = animationProgress * 0.01f + elapsedTime * animationDelta * animation.sign;
+    if (t >= 1.0f || t < 0.0f)
     {
-        selectedAnimation.sign = -selectedAnimation.sign;
-        normalizedTime = Saturate(normalizedTime);
+        animation.sign = -animation.sign;
+        t = Saturate(t);
     }
 
-    animationProgress = normalizedTime * 100.0f;
+    animationProgress = t * 100.0f;
 
     // Update animation nodes
-    for (AnimationNode& animationNode : selectedAnimation.animationNodes)
-        animationNode.Animate(normalizedTime);
+    for (AnimationNode& animationNode : animation.animationNodes)
+        animationNode.Update(t);
 
-    // Recursively update instances in animation nodes
-    selectedAnimation.rootNode.Animate(*this, selectedAnimation.animationNodes, mSceneToWorld, isParentAnimated);
+    // Recursively update instances in the nood tree
+    animation.rootNode.Animate(*this, animation.animationNodes, mSceneToWorld);
 
     // Update camera animation (if requested)
     if (outCameraTransform)
     {
         float4x4 transform;
-        selectedAnimation.cameraNode.Animate(*this, selectedAnimation.animationNodes, float4x4::Identity(), isParentAnimated, &transform);
+        animation.cameraNode.Animate(*this, animation.animationNodes, float4x4::Identity(), &transform);
 
         // Inverse 3x3 rotation (without scene-to-world rotation)
         float3 pos = transform.GetCol3().xmm;
