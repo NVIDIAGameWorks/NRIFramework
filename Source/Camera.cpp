@@ -30,7 +30,7 @@ void Camera::Initialize(const float3& position, const float3& lookAt, bool isRel
 void Camera::Update(const CameraDesc& desc, uint32_t frameIndex)
 {
     uint32_t projFlags = desc.isProjectionReversed ? PROJ_REVERSED_Z : 0;
-    projFlags |= desc.isLeftHanded ? PROJ_LEFT_HANDED : 0;
+    projFlags |= desc.isPositiveZ ? PROJ_POSITIVE_Z : 0;
 
     // Position
     const float3 vRight = state.mWorldToView.GetRow0().To3d();
@@ -38,7 +38,7 @@ void Camera::Update(const CameraDesc& desc, uint32_t frameIndex)
     const float3 vForward = state.mWorldToView.GetRow2().To3d();
 
     float3 delta = desc.dLocal * desc.timeScale;
-    delta.z *= desc.isLeftHanded ? 1.0f : -1.0f;
+    delta.z *= desc.isPositiveZ ? 1.0f : -1.0f;
 
     state.globalPosition += ToDouble(vRight * delta.x);
     state.globalPosition += ToDouble(vUp * delta.y);
@@ -114,10 +114,6 @@ void Camera::Update(const CameraDesc& desc, uint32_t frameIndex)
     state.mClipToWorld.Invert();
 
     state.viewportJitter = Halton2D( frameIndex ) - 0.5f;
-
-    uint32_t flags = 0;
-    DecomposeProjection(NDC_D3D, NDC_D3D, state.mViewToClip, &flags, nullptr, nullptr, state.frustum.pv, nullptr, nullptr);
-    m_IsOrtho = ( flags & PROJ_ORTHO ) == 0 ? 0.0f : -1.0f;
 
     // Previous other
     statePrev.mWorldToClip = statePrev.mViewToClip * statePrev.mWorldToView;

@@ -16,9 +16,9 @@ license agreement from NVIDIA CORPORATION is strictly prohibited.
 #include <map>
 #include <functional>
 
-#include "assimp/scene.h"
-#include "assimp/cimport.h"
-#include "assimp/postprocess.h"
+#include <algorithm>
+#include <fstream>
+#include <filesystem>
 
 #include "Detex/detex.h"
 
@@ -30,14 +30,8 @@ license agreement from NVIDIA CORPORATION is strictly prohibited.
 #include "Helper.h"
 #include "Utils.h"
 
-constexpr std::array<aiTextureType, 5> gSupportedTextureTypes =
-{
-    aiTextureType_DIFFUSE,      // OBJ - map_Kd
-    aiTextureType_SPECULAR,     // OBJ - map_Ks
-    aiTextureType_NORMALS,      // OBJ - map_Kn
-    aiTextureType_EMISSIVE,     // OBJ - map_Ke
-    aiTextureType_SHININESS     // OBJ - map_Ns (smoothness)
-};
+#define CGLTF_IMPLEMENTATION
+#include "cgltf.h"
 
 constexpr std::array<const char*, 13> gShaderExts =
 {
@@ -60,63 +54,69 @@ constexpr std::array<const char*, 13> gShaderExts =
 // MISC
 //========================================================================================================================
 
-inline bool IsExist(const std::string& path)
+static void GeneratePrimitiveDataAndTangents(utils::Scene& scene, const utils::Mesh& mesh)
 {
-#if _WIN32
-    return _access(path.c_str(), 0) == 0;
-#else
-    return access(path.c_str(), 0) == 0;
-#endif
-}
+    std::vector<float3> tangents(mesh.vertexNum, float3::Zero());
+    std::vector<float3> bitangents(mesh.vertexNum, float3::Zero());
 
-inline bool EndsWithNoCase(std::string const &value, std::string const &ending)
-{
-    auto it = ending.begin();
-    return value.size() >= ending.size() &&
-        std::all_of(std::next(value.begin(), value.size() - ending.size()), value.end(), [&it](const char & c) {
-            return ::tolower(c) == ::tolower(*(it++));
-        });
-}
+    std::vector<double> curvatures(mesh.vertexNum, 0.0);
+    std::vector<double> curvatureWeights(mesh.vertexNum, 0.0);
 
-static void GenerateTangents(const aiMesh& mesh, std::vector<float4>& tangents)
-{
-    std::vector<float3> tan1(mesh.mNumVertices, float3::Zero());
-    std::vector<float3> tan2(mesh.mNumVertices, float3::Zero());
-
-    const aiVector3D zeroUv(0.0f, 0.0f, 0.0f);
-    const bool hasTexCoord0 = mesh.HasTextureCoords(0);
-
-    for (uint32_t i = 0; i < mesh.mNumFaces; i++)
+    for (size_t j = 0; j < mesh.indexNum; j += 3)
     {
-        uint32_t i0 = mesh.mFaces[i].mIndices[0];
-        uint32_t i1 = mesh.mFaces[i].mIndices[1];
-        uint32_t i2 = mesh.mFaces[i].mIndices[2];
+        size_t primitiveBaseIndex = mesh.indexOffset + j;
 
-        float3 p0 = float3(&mesh.mVertices[i0].x);
-        float3 p1 = float3(&mesh.mVertices[i1].x);
-        float3 p2 = float3(&mesh.mVertices[i2].x);
+        size_t i0 = scene.indices[primitiveBaseIndex];
+        size_t i1 = scene.indices[primitiveBaseIndex + 1];
+        size_t i2 = scene.indices[primitiveBaseIndex + 2];
 
-        float3 n0 = float3(&mesh.mNormals[i0].x);
-        float3 n1 = float3(&mesh.mNormals[i1].x);
-        float3 n2 = float3(&mesh.mNormals[i2].x);
+        const utils::UnpackedVertex& v0 = scene.unpackedVertices[mesh.vertexOffset + i0];
+        const utils::UnpackedVertex& v1 = scene.unpackedVertices[mesh.vertexOffset + i1];
+        const utils::UnpackedVertex& v2 = scene.unpackedVertices[mesh.vertexOffset + i2];
 
-        const aiVector3D& uv0 = hasTexCoord0 ? mesh.mTextureCoords[0][i0] : zeroUv;
-        const aiVector3D& uv1 = hasTexCoord0 ? mesh.mTextureCoords[0][i1] : zeroUv;
-        const aiVector3D& uv2 = hasTexCoord0 ? mesh.mTextureCoords[0][i2] : zeroUv;
+        float3 p0(v0.position);
+        float3 p1(v1.position);
+        float3 p2(v2.position);
 
-        float s1 = uv1.x - uv0.x;
-        float s2 = uv2.x - uv0.x;
-        float t1 = uv1.y - uv0.y;
-        float t2 = uv2.y - uv0.y;
-        float r = s1 * t2 - s2 * t1;
+        float3 edge20 = p2 - p0;
+        float3 edge10 = p1 - p0;
+        float worldArea = Max( Length( Cross(edge20, edge10) ), 1e-9f );
 
-        float3 sdir, tdir;
+        float3 uvEdge20 = float3(v2.uv[0], v2.uv[1], 0.0f) - float3(v0.uv[0], v0.uv[1], 0.0f);
+        float3 uvEdge10 = float3(v1.uv[0], v1.uv[1], 0.0f) - float3(v0.uv[0], v0.uv[1], 0.0f);
+        float uvArea = Length( Cross(uvEdge20, uvEdge10) );
 
+        utils::Primitive& primitive = scene.primitives[primitiveBaseIndex / 3];
+        primitive.worldToUvUnits = uvArea == 0 ? 1.0f : Sqrt( uvArea / worldArea );
+
+        // Unsigned curvature // TODO: make signed?
+        // https://computergraphics.stackexchange.com/questions/1718/what-is-the-simplest-way-to-compute-principal-curvature-for-a-mesh-triangle
+        float3 n0 = float3(v0.normal);
+        float3 n1 = float3(v1.normal);
+        float3 n2 = float3(v2.normal);
+
+        double curvature10 = Abs( Dot33(n1 - n0, p1 - p0) ) / LengthSquared(p1 - p0);
+        double curvature21 = Abs( Dot33(n2 - n1, p2 - p1) ) / LengthSquared(p2 - p1);
+        double curvature02 = Abs( Dot33(n0 - n2, p0 - p2) ) / LengthSquared(p0 - p2);
+
+        curvatures[i0] += Max(curvature10, curvature02) * worldArea;
+        curvatures[i1] += Max(curvature10, curvature21) * worldArea;
+        curvatures[i2] += Max(curvature02, curvature21) * worldArea;
+
+        curvatureWeights[i0] += worldArea;
+        curvatureWeights[i1] += worldArea;
+        curvatureWeights[i2] += worldArea;
+
+        // Tangent
+        float r = uvEdge10.x * uvEdge20.y - uvEdge20.x * uvEdge10.y;
+
+        float3 tangent, bitangent;
         if (Abs(r) < 1e-9f)
         {
             n1.z += 1e-6f;
-            sdir = GetPerpendicularVector(n1);
-            tdir = Cross(n1, sdir);
+
+            tangent = GetPerpendicularVector(n1);
+            bitangent = Cross(n1, tangent);
         }
         else
         {
@@ -125,47 +125,45 @@ static void GenerateTangents(const aiMesh& mesh, std::vector<float4>& tangents)
             float3 a = (p1 - p0) * invr;
             float3 b = (p2 - p0) * invr;
 
-            sdir = a * t2 - b * t1;
-            tdir = b * s1 - a * s2;
+            tangent = a * uvEdge20.y - b * uvEdge10.y;
+            bitangent = b * uvEdge10.x - a * uvEdge20.x;
         }
 
-        tan1[i0] += sdir;
-        tan1[i1] += sdir;
-        tan1[i2] += sdir;
+        tangents[i0] += tangent;
+        tangents[i1] += tangent;
+        tangents[i2] += tangent;
 
-        tan2[i0] += tdir;
-        tan2[i1] += tdir;
-        tan2[i2] += tdir;
+        bitangents[i0] += bitangent;
+        bitangents[i1] += bitangent;
+        bitangents[i2] += bitangent;
     }
 
-    for (uint32_t i = 0; i < mesh.mNumVertices; i++)
+    for (size_t j = 0; j < mesh.vertexNum; j++)
     {
-        float3 n = float3(&mesh.mNormals[i].x);
+        utils::UnpackedVertex& unpackedVertex = scene.unpackedVertices[mesh.vertexOffset + j];
+        float3 N = float3(unpackedVertex.normal);
 
-        float3 t = tan1[i];
-        if (t.IsZero())
-           t = Cross(tan2[i], n);
-
-        // Gram-Schmidt orthogonalize
-        t -= n * Dot33(n, t);
-        float len = Length(t);
-        t /= Max(len, 1e-9f);
+        float3 T = tangents[j];
+        if (Length(T) < 1e-9f)
+            T = Cross(bitangents[j], N);
+        else // Gram-Schmidt orthogonalize
+            T -= N * Dot33(N, T);
+        T = Normalize(T);
 
         // Calculate handedness
-        float handedness = Sign( Dot33( Cross(n, t), tan2[i] ) );
+        float handedness = Sign( Dot33(Cross(N, T), bitangents[j]) );
 
-        tangents[i] = float4(t.x, t.y, t.z, handedness);
+        // Output
+        float4 result = float4(T.x, T.y, T.z, handedness);
+        unpackedVertex.tangent[0] = result.x;
+        unpackedVertex.tangent[1] = result.y;
+        unpackedVertex.tangent[2] = result.z;
+        unpackedVertex.tangent[3] = result.w;
+        unpackedVertex.curvature =  float(curvatures[j] / curvatureWeights[j]);
+
+        utils::Vertex& vertex = scene.vertices[mesh.vertexOffset + j];
+        vertex.tangent = Packed::uf4_to_uint<10, 10, 10, 2>(result * 0.5f + 0.5f);
     }
-}
-
-inline uint64_t ComputeHash(const void* key, uint32_t len)
-{
-    const uint8_t* p = (uint8_t*)key;
-    uint64_t result = 14695981039346656037ull;
-    while( len-- )
-        result = (result ^ (*p++)) * 1099511628211ull;
-
-    return result;
 }
 
 inline const char* GetShaderExt(nri::GraphicsAPI graphicsAPI)
@@ -177,67 +175,6 @@ inline const char* GetShaderExt(nri::GraphicsAPI graphicsAPI)
 
     return ".spirv";
 }
-
-struct NodeData
-{
-    aiMatrix4x4 transform;
-    aiNode* node;
-};
-
-static void BindNodesToMeshID(aiNode* node, aiMatrix4x4 parentTransform, std::vector<std::vector<NodeData>>& vector)
-{
-    aiMatrix4x4 transform = parentTransform * node->mTransformation;
-
-    for (uint32_t j = 0; j < node->mNumMeshes; j++)
-    {
-        NodeData tmpNodeData = {};
-        tmpNodeData.node = node;
-        tmpNodeData.transform = transform;
-        vector[node->mMeshes[j]].push_back(tmpNodeData);
-    }
-
-    for (uint32_t i = 0; i < node->mNumChildren; i++)
-        BindNodesToMeshID(node->mChildren[i], transform, vector);
-}
-
-static void ExtractNodeTree(const aiNode* node, std::map<const aiNode*, std::vector<uint32_t>>& nodeToInstanceMap, utils::NodeTree& animationInstance)
-{
-    float4x4 transform = float4x4(
-        node->mTransformation.a1, node->mTransformation.a2, node->mTransformation.a3, node->mTransformation.a4,
-        node->mTransformation.b1, node->mTransformation.b2, node->mTransformation.b3, node->mTransformation.b4,
-        node->mTransformation.c1, node->mTransformation.c2, node->mTransformation.c3, node->mTransformation.c4,
-        0.0f, 0.0f, 0.0f, 1.0f);
-
-    utils::NodeTree parentInstance = {};
-    parentInstance.hash = ComputeHash((uint8_t*)node->mName.C_Str(), node->mName.length);
-    parentInstance.mTransform = transform;
-
-    std::map<const aiNode*, std::vector<uint32_t>>::iterator it = nodeToInstanceMap.find((aiNode*)node);
-    if (it != nodeToInstanceMap.end())
-        parentInstance.instances = it->second;
-
-    parentInstance.children.resize(node->mNumChildren);
-    for (uint32_t i = 0; i < node->mNumChildren; i++)
-        ExtractNodeTree(node->mChildren[i], nodeToInstanceMap, parentInstance.children[i]);
-
-    animationInstance = parentInstance;
-}
-
-inline float SafeLinearstep(float a, float b, float x)
-{
-    return a == b ? 0.0f : Linearstep(a, b, x);
-}
-
-inline uint32_t FindCurrentIndex(const std::vector<float>& keys, float time)
-{
-    for (uint32_t i = helper::GetCountOf(keys) - 1; i >= 1; i--)
-    {
-        if (time >= keys[i])
-            return i;
-    }
-
-    return 0u;
-};
 
 static struct FormatMapping
 {
@@ -468,7 +405,6 @@ bool utils::LoadTexture(const std::string& path, Texture& texture, bool computeA
 
     texture.mips = (Mip*)dTexture;
     texture.name = path;
-    texture.hash = ComputeHash(path.c_str(), (uint32_t)path.length());
     texture.format = GetFormatNRI(dTexture[0]->format);
     texture.width = (uint16_t)dTexture[0]->width;
     texture.height = (uint16_t)dTexture[0]->height;
@@ -525,7 +461,7 @@ bool utils::LoadTexture(const std::string& path, Texture& texture, bool computeA
             avgColor += Packed::uint_to_uf4<8, 8, 8, 8>(*(uint32_t*)(rgba8 + i * 4));
         avgColor /= float(pixelNum);
 
-        if (texture.alphaMode != AlphaMode::PREMULTIPLIED && avgColor.w < 254.5f / 255.0f)
+        if (texture.alphaMode != AlphaMode::PREMULTIPLIED && avgColor.w < 254.0f / 255.0f)
             texture.alphaMode = AlphaMode::TRANSPARENT;
 
         if (texture.alphaMode == AlphaMode::TRANSPARENT && avgColor.w == 0.0f)
@@ -551,584 +487,889 @@ void utils::LoadTextureFromMemory(nri::Format format, uint32_t width, uint32_t h
     texture.mips = (Mip*)dTexture;
 }
 
+static const char* cgltfErrorToString(cgltf_result res)
+{
+    switch (res)
+    {
+        case cgltf_result_success:
+            return "Success";
+        case cgltf_result_data_too_short:
+            return "Data is too short";
+        case cgltf_result_unknown_format:
+            return "Unknown format";
+        case cgltf_result_invalid_json:
+            return "Invalid JSON";
+        case cgltf_result_invalid_gltf:
+            return "Invalid GLTF";
+        case cgltf_result_invalid_options:
+            return "Invalid options";
+        case cgltf_result_file_not_found:
+            return "File not found";
+        case cgltf_result_io_error:
+            return "I/O error";
+        case cgltf_result_out_of_memory:
+            return "Out of memory";
+        case cgltf_result_legacy_gltf:
+            return "Legacy GLTF";
+        default:
+            return "Unknown error";
+    }
+}
+
+static std::pair<const uint8_t*, size_t> cgltfBufferIterator(const cgltf_accessor* accessor, size_t defaultStride)
+{
+    // TODO: sparse accessor support
+    const cgltf_buffer_view* view = accessor->buffer_view;
+    const uint8_t* data = (uint8_t*)view->buffer->data + view->offset + accessor->offset;
+    const size_t stride = view->stride ? view->stride : defaultStride;
+
+    return std::make_pair(data, stride);
+}
+
+// GLTF only support DDS images through the MSFT_texture_dds extension.
+// Since cgltf does not support this extension, we parse the custom extension string as json here.
+// See https://github.com/KhronosGroup/GLTF/tree/master/extensions/2.0/Vendor/MSFT_texture_dds 
+static const cgltf_image* ParseDdsImage(const cgltf_texture* texture, const cgltf_data* objects)
+{
+    for (size_t i = 0; i < texture->extensions_count; i++)
+    {
+        const cgltf_extension& ext = texture->extensions[i];
+
+        if (!ext.name || !ext.data)
+            continue;
+
+        if (strcmp(ext.name, "MSFT_texture_dds") != 0)
+            continue;
+
+        size_t extensionLength = strlen(ext.data);
+        if (extensionLength > 1024)
+            return nullptr; // safeguard against weird inputs
+
+        jsmn_parser parser;
+        jsmn_init(&parser);
+
+        // count the tokens, normally there are 3
+        int numTokens = jsmn_parse(&parser, ext.data, extensionLength, nullptr, 0);
+
+        // allocate the tokens on the stack
+        jsmntok_t* tokens = (jsmntok_t*)alloca(numTokens * sizeof(jsmntok_t));
+
+        // reset the parser and prse
+        jsmn_init(&parser);
+        int numParsed = jsmn_parse(&parser, ext.data, extensionLength, tokens, numTokens);
+        if (numParsed != numTokens)
+            goto fail;
+
+        if (tokens[0].type != JSMN_OBJECT)
+            goto fail; // expecting that the extension is an object
+
+        for (int k = 1; k < numTokens; k++)
+        {
+            if (tokens[k].type != JSMN_STRING)
+                goto fail; // expecting a string key
+            
+            if (cgltf_json_strcmp(tokens + k, (const uint8_t*)ext.data, "source") == 0)
+            {
+                ++k;
+                int index = cgltf_json_to_int(tokens + k, (const uint8_t*)ext.data);
+                if (index < 0)
+                    goto fail; // expecting a non-negative integer; non-value results in CGLTF_ERROR_JSON which is negative
+
+                if (size_t(index) >= objects->images_count)
+                {
+                    printf("WARNING: Invalid image index %d specified in GLTF texture definition\n", index);
+                    return nullptr;
+                }
+
+                return objects->images + index;
+            }
+
+            // this was something else - skip it
+            k = cgltf_skip_json(tokens, k);
+        }
+
+    fail:
+        printf("WARNING: Failed to parse the DDS GLTF extension: %s\n", ext.data);
+        return nullptr;
+    }
+
+    return nullptr;
+}
+
+void DecomposeAffine(const float4x4& transform, float3& translation, float4& rotation, float3& scale)
+{
+    translation = transform.col3;
+
+    float3 col0 = transform.col0;
+    float3 col1 = transform.col1;
+    float3 col2 = transform.col2;
+
+    scale.x = Length(col0);
+    scale.y = Length(col1);
+    scale.z = Length(col2);
+    if (scale.x > 0.f) col0 /= scale.x;
+    if (scale.y > 0.f) col1 /= scale.y;
+    if (scale.z > 0.f) col2 /= scale.z;
+
+    float3 zAxis = Cross(col0, col1);
+    if (Dot33(zAxis, col2) < 0.0f)
+    {
+        scale.x = -scale.x;
+        col0 = -col0;
+    }
+
+    // https://www.euclideanspace.com/maths/geometry/rotations/conversions/matrixToQuaternion/
+    rotation.w = Sqrt(Max(0.0f, 1.0f + col0.x + col1.y + col2.z)) * 0.5f;
+    rotation.x = Sqrt(Max(0.0f, 1.0f + col0.x - col1.y - col2.z)) * 0.5f;
+    rotation.y = Sqrt(Max(0.0f, 1.0f - col0.x + col1.y - col2.z)) * 0.5f;
+    rotation.z = Sqrt(Max(0.0f, 1.0f - col0.x - col1.y + col2.z)) * 0.5f;
+    rotation.x = std::copysign(rotation.x, col2.y - col1.z);
+    rotation.y = std::copysign(rotation.y, col0.z - col2.x);
+    rotation.z = std::copysign(rotation.z, col1.x - col0.y);
+}
+
 bool utils::LoadScene(const std::string& path, Scene& scene, bool allowUpdate)
 {
     printf("Loading scene '%s'...\n", GetFileName(path));
 
-    constexpr uint32_t MAX_INDEX = 65535;
+    std::filesystem::path normPath(path.c_str());
+    normPath = std::filesystem::canonical(normPath);
 
-    // Taken from Falcor
-    uint32_t aiFlags = aiProcessPreset_TargetRealtime_MaxQuality;
-    aiFlags |= aiProcess_FlipUVs;
-    aiFlags &= ~aiProcess_CalcTangentSpace; // Use Mikktspace instead
-    aiFlags &= ~aiProcess_FindDegenerates; // Avoid converting degenerated triangles to lines
-    aiFlags &= ~aiProcess_OptimizeGraph; // Never use as it doesn't handle transforms with negative determinants
-    aiFlags &= ~aiProcess_OptimizeMeshes; // Avoid merging original meshes
+    cgltf_options options{};
 
-    std::string baseDir = path;
-    const size_t lastSlash = baseDir.find_last_of("\\/");
-    if (lastSlash != std::string::npos)
-        baseDir.erase(baseDir.begin() + lastSlash + 1, baseDir.end());
-
-    aiPropertyStore* props = aiCreatePropertyStore();
-    aiSetImportPropertyInteger(props, AI_CONFIG_PP_SLM_VERTEX_LIMIT, MAX_INDEX);
-    aiSetImportPropertyInteger(props, AI_CONFIG_PP_RVC_FLAGS, aiComponent_COLORS);
-    aiSetImportPropertyInteger(props, AI_CONFIG_PP_SBP_REMOVE, aiPrimitiveType_LINE | aiPrimitiveType_POINT);
-    const aiScene* result = aiImportFileExWithProperties(path.c_str(), aiFlags, nullptr, props);
-    aiReleasePropertyStore(props);
-    if (!result)
+    cgltf_data* objects{};
+    cgltf_result res = cgltf_parse_file(&options, path.c_str(), &objects);
+    if (res != cgltf_result_success)
     {
-        printf("ERROR: Can't load scene '%s'...\n", path.c_str());
+        printf("Couldn't load GLTF file '%s': %s", path.c_str(), cgltfErrorToString(res));
         return false;
     }
-    const aiScene& aiScene = *result;
-    const aiNode* rootNode = aiScene.mRootNode;
 
-    uint32_t instanceNum = aiScene.mNumMeshes;
-    std::map<const aiNode*, std::vector<uint32_t>> nodeToInstanceMap;
-    std::vector<std::vector<NodeData>> nodesByMeshID;
-    const bool loadFromNodes = EndsWithNoCase(path.c_str(), ".fbx") != 0 || EndsWithNoCase(path.c_str(), ".gltf") != 0;
-    if (loadFromNodes)
+    res = cgltf_load_buffers(&options, objects, path.c_str());
+    if (res != cgltf_result_success)
     {
-        nodesByMeshID.resize(aiScene.mNumMeshes);
-        for (uint32_t j = 0; j < rootNode->mNumChildren; j++)
-            BindNodesToMeshID(rootNode->mChildren[j], rootNode->mTransformation, nodesByMeshID);
-
-        instanceNum = 0;
-        for (uint32_t j = 0; j < helper::GetCountOf(nodesByMeshID); j++)
-            instanceNum += helper::GetCountOf(nodesByMeshID[j]);
-
-        scene.mSceneToWorld.SetupByRotationX( Pi(0.5f) );
+        printf("Failed to load buffers for GLTF file '%s': %s", path.c_str(), cgltfErrorToString(res));
+        return false;
     }
 
-    // Group meshes by material
-    std::vector<std::pair<uint32_t, uint32_t>> sortedMaterials(aiScene.mNumMeshes);
+    // Meshes
+    // TODO: framework doesn't support multiple submeshes per instance, treat every primitive as a separate mesh
+    std::vector<std::vector<size_t>> meshesPrimMap;
+    meshesPrimMap.resize(objects->meshes_count);
+
+    size_t meshNum = 0;
+    for (size_t mesh_idx = 0; mesh_idx < objects->meshes_count; mesh_idx++)
     {
-        for (uint32_t i = 0; i < aiScene.mNumMeshes; i++)
-            sortedMaterials[i] = { i, aiScene.mMeshes[i]->mMaterialIndex };
+        const cgltf_mesh& gltfMesh = objects->meshes[mesh_idx];
 
-        const auto sortPred = [](const std::pair<uint32_t, uint32_t>& a, const std::pair<uint32_t, uint32_t>& b)
-        { return a.second < b.second; };
+        std::vector<size_t>& meshPrimMap = meshesPrimMap[mesh_idx];
+        meshPrimMap.resize(gltfMesh.primitives_count);
 
-        std::sort(sortedMaterials.begin(), sortedMaterials.end(), sortPred);
-    }
-
-    const uint32_t materialOffset = (uint32_t)scene.materials.size();
-    scene.materials.resize(materialOffset + aiScene.mNumMaterials);
-
-    // Meshes and instances
-    const uint32_t meshOffset = (uint32_t)scene.meshes.size();
-    scene.meshes.resize(meshOffset + aiScene.mNumMeshes);
-
-    const uint32_t instanceOffset = (uint32_t)scene.instances.size();
-    scene.instances.resize(instanceOffset + instanceNum);
-
-    uint32_t totalIndices = (uint32_t)scene.indices.size();
-    uint32_t totalVertices = (uint32_t)scene.vertices.size();
-    uint32_t indexOffset = totalIndices;
-    uint32_t vertexOffset = totalVertices;
-
-    uint32_t nodeInstanceOffset = instanceOffset;
-    for (uint32_t i = 0; i < aiScene.mNumMeshes; i++)
-    {
-        const uint32_t sortedMeshIndex = sortedMaterials[i].first;
-        const aiMesh& aiMesh = *aiScene.mMeshes[sortedMeshIndex];
-        const uint32_t meshIndex = meshOffset + i;
-
-        Mesh& mesh = scene.meshes[meshIndex];
-        mesh.indexOffset = totalIndices;
-        mesh.vertexOffset = totalVertices;
-        mesh.indexNum = aiMesh.mNumFaces * 3;
-        mesh.vertexNum = aiMesh.mNumVertices;
-
-        totalIndices += mesh.indexNum;
-        totalVertices += mesh.vertexNum;
-
-        uint32_t materialIndex = materialOffset + sortedMaterials[i].second;
-        if (loadFromNodes)
+        for (size_t prim_idx = 0; prim_idx < gltfMesh.primitives_count; prim_idx++)
         {
-            const std::vector<NodeData>& relatedNodes = nodesByMeshID[sortedMeshIndex];
+            const cgltf_primitive& gltfSubmesh = gltfMesh.primitives[prim_idx];
+            if (gltfSubmesh.type != cgltf_primitive_type_triangles || gltfSubmesh.attributes_count == 0)
+                continue;
 
-            for (uint32_t j = 0; j < helper::GetCountOf(relatedNodes); j++)
-            {
-                const aiMatrix4x4& aiTransform = relatedNodes[j].transform;
-
-                float4x4 transform
-                (
-                    aiTransform.a1, aiTransform.a2, aiTransform.a3, aiTransform.a4,
-                    aiTransform.b1, aiTransform.b2, aiTransform.b3, aiTransform.b4,
-                    aiTransform.c1, aiTransform.c2, aiTransform.c3, aiTransform.c4,
-                    0.0f, 0.0f, 0.0f, 1.0f
-                );
-                transform = scene.mSceneToWorld * transform;
-
-                double3 position = ToDouble( transform.GetCol3().To3d() );
-                transform.SetTranslation( float3::Zero() );
-
-                Instance& instance = scene.instances[nodeInstanceOffset];
-                instance.meshIndex = meshIndex;
-                instance.position = position;
-                instance.rotation = transform;
-                instance.materialIndex = materialIndex;
-                instance.allowUpdate = allowUpdate;
-
-                std::map<const aiNode*, std::vector<uint32_t>>::iterator nodeToInstIt = nodeToInstanceMap.find(relatedNodes[j].node);
-                if (nodeToInstIt != nodeToInstanceMap.end())
-                    nodeToInstIt->second.push_back(nodeInstanceOffset);
-                else
-                {
-                    std::vector<uint32_t> tmpVector = { nodeInstanceOffset };
-                    nodeToInstanceMap.insert( std::make_pair(relatedNodes[j].node, tmpVector) );
-                }
-
-                nodeInstanceOffset++;
-            }
-        }
-        else
-        {
-            Instance& instance = scene.instances[instanceOffset + i];
-            instance.meshIndex = meshIndex;
-            instance.materialIndex = materialIndex;
-            instance.allowUpdate = allowUpdate;
+            meshPrimMap[prim_idx] = meshNum++;
         }
     }
 
-    // Animation
-    if (aiScene.HasAnimations())
+    size_t materialNum = objects->materials_count;
+    size_t materialOffset = scene.materials.size();
+    scene.materials.resize(materialOffset + materialNum);
+
+    size_t meshOffset = scene.meshes.size();
+    scene.meshes.resize(meshOffset + meshNum);
+
+    size_t totalIndices = scene.indices.size();
+    size_t totalVertices = scene.vertices.size();
+
+    for (size_t mesh_idx = 0; mesh_idx < objects->meshes_count; mesh_idx++)
     {
-        const aiAnimation* aiAnimation = aiScene.mAnimations[0];
-        scene.animations.push_back(Animation());
-        Animation& animation = scene.animations.back();
-        animation.animationName = GetFileName(path);
+        const cgltf_mesh& gltfMesh = objects->meshes[mesh_idx];
 
-        ExtractNodeTree(rootNode, nodeToInstanceMap, animation.rootNode);
-
-        float animationTotalMs = float(1000.0 * aiAnimation->mDuration / aiAnimation->mTicksPerSecond);
-        animation.durationMs = animationTotalMs;
-        animation.animationNodes.resize(aiAnimation->mNumChannels);
-
-        for(uint32_t i = 0; i < aiAnimation->mNumChannels; i++)
+        for (size_t prim_idx = 0; prim_idx < gltfMesh.primitives_count; prim_idx++)
         {
-            const aiNodeAnim* animChannel = aiAnimation->mChannels[i];
-            const aiNode* affectedNode = rootNode->FindNode(animChannel->mNodeName);
+            const cgltf_primitive& gltfSubmesh = gltfMesh.primitives[prim_idx];
+            if (gltfSubmesh.type != cgltf_primitive_type_triangles || gltfSubmesh.attributes_count == 0)
+                continue;
 
-            // Camera
-            bool isCamera = false;
-            if (aiScene.mNumCameras > 0 && strstr(animChannel->mNodeName.C_Str(), aiScene.mCameras[0]->mName.C_Str()))
-            {
-                NodeTree* nextNode = &animation.cameraNode;
-                while (!nextNode->children.empty())
-                    nextNode = &nextNode->children[0];
+            size_t meshVertices = gltfSubmesh.attributes->data->count;
+            size_t meshIndices = gltfSubmesh.indices ? gltfSubmesh.indices->count : meshVertices;
+            size_t meshIndex = meshOffset + meshesPrimMap[mesh_idx][prim_idx];
 
-                nextNode->animationNodeIndex = i;
-                nextNode->children.push_back( NodeTree() );
+            Mesh& mesh = scene.meshes[meshIndex];
+            mesh.indexOffset = (uint32_t)totalIndices;
+            mesh.vertexOffset = (uint32_t)totalVertices;
+            mesh.indexNum = (uint32_t)meshIndices;
+            mesh.vertexNum = (uint32_t)meshVertices;
 
-                isCamera = true;
-            }
-
-            // Objects
-            const uint64_t hash = ComputeHash(affectedNode->mName.C_Str(), affectedNode->mName.length);
-            AnimationNode& animationNode = animation.animationNodes[i];
-
-            for (uint32_t j = 0; j < animChannel->mNumPositionKeys; j++)
-            {
-                const aiVectorKey& positionKey = animChannel->mPositionKeys[j];
-                const float time = float( positionKey.mTime / aiAnimation->mDuration );
-                const double3 value = double3(positionKey.mValue.x, positionKey.mValue.y, positionKey.mValue.z);
-                animationNode.positionKeys.push_back(time);
-                animationNode.positionValues.push_back(value);
-            }
-
-            for (uint32_t j = 0; j < animChannel->mNumRotationKeys; j++)
-            {
-                const aiQuatKey& rotationKey = animChannel->mRotationKeys[j];
-                const float time = float( rotationKey.mTime / aiAnimation->mDuration );
-                const float4 value = float4(rotationKey.mValue.x, rotationKey.mValue.y, rotationKey.mValue.z, rotationKey.mValue.w);
-                animationNode.rotationKeys.push_back(time);
-                animationNode.rotationValues.push_back(value);
-            }
-
-            for (uint32_t j = 0; j < animChannel->mNumScalingKeys; j++)
-            {
-                const aiVectorKey& scalingKey = animChannel->mScalingKeys[j];
-                const float time = float( scalingKey.mTime / aiAnimation->mDuration );
-                const float3 value = float3(scalingKey.mValue.x, scalingKey.mValue.y, scalingKey.mValue.z);
-                animationNode.scaleKeys.push_back(time);
-                animationNode.scaleValues.push_back(value);
-            }
-
-            std::function<void(const uint64_t&, NodeTree&)> findNode = [&](const uint64_t& hash, NodeTree& sceneNode)
-            {
-                if (hash == sceneNode.hash)
-                {
-                    sceneNode.animationNodeIndex = i;
-                    return;
-                }
-
-                for (NodeTree& child : sceneNode.children)
-                    findNode(hash, child);
-            };
-
-            findNode(hash, animation.rootNode);
+            totalIndices += mesh.indexNum;
+            totalVertices += mesh.vertexNum;
         }
     }
-
-    // Geometry
-    std::vector<float4> tangents(totalVertices);
 
     scene.indices.resize(totalIndices);
     scene.primitives.resize(totalIndices / 3);
     scene.vertices.resize(totalVertices);
     scene.unpackedVertices.resize(totalVertices);
 
-    for (uint32_t i = 0; i < aiScene.mNumMeshes; i++)
+    // Geometry
+    for (size_t mesh_idx = 0; mesh_idx < objects->meshes_count; mesh_idx++)
     {
-        const uint32_t sortedMeshIndex = sortedMaterials[i].first;
-        const aiMesh& aiMesh = *aiScene.mMeshes[sortedMeshIndex];
+        const cgltf_mesh& gltfMesh = objects->meshes[mesh_idx];
 
-        Mesh& mesh = scene.meshes[meshOffset + i];
-        mesh.aabb.Clear();
-
-        // Generate tangents
-        GenerateTangents(aiMesh, tangents);
-
-        // Indices
-        for (uint32_t j = 0; j < aiMesh.mNumFaces; j++)
+        for (size_t prim_idx = 0; prim_idx < gltfMesh.primitives_count; prim_idx++)
         {
-            const aiFace& aiFace = aiMesh.mFaces[j];
-            for (uint32_t k = 0; k < aiFace.mNumIndices; k++)
+            const cgltf_primitive& gltfSubmesh = gltfMesh.primitives[prim_idx];
+            if (gltfSubmesh.type != cgltf_primitive_type_triangles || gltfSubmesh.attributes_count == 0)
+                continue;
+
+            size_t meshIndex = meshOffset + meshesPrimMap[mesh_idx][prim_idx];
+            Mesh& mesh = scene.meshes[meshIndex];
+            mesh.aabb.Clear();
+
+            const cgltf_accessor* positions = nullptr;
+            const cgltf_accessor* normals = nullptr;
+            const cgltf_accessor* texcoords = nullptr;
+            const cgltf_accessor* joint_weights = nullptr;
+            const cgltf_accessor* joint_indices = nullptr;
+
+            for (size_t attr_idx = 0; attr_idx < gltfSubmesh.attributes_count; attr_idx++)
             {
-                uint32_t index = aiFace.mIndices[k];
-                scene.indices[indexOffset++] = (uint16_t)index;
+                const cgltf_attribute& attr = gltfSubmesh.attributes[attr_idx];
+
+                switch (attr.type)
+                {
+                    case cgltf_attribute_type_position:
+                        assert(attr.data->type == cgltf_type_vec3);
+                        assert(attr.data->component_type == cgltf_component_type_r_32f);
+                        positions = attr.data;
+                        break;
+                    case cgltf_attribute_type_normal:
+                        assert(attr.data->type == cgltf_type_vec3);
+                        assert(attr.data->component_type == cgltf_component_type_r_32f);
+                        normals = attr.data;
+                        break;
+                    case cgltf_attribute_type_texcoord:
+                        assert(attr.data->type == cgltf_type_vec2);
+                        assert(attr.data->component_type == cgltf_component_type_r_32f);
+                        if (attr.index == 0)
+                            texcoords = attr.data;
+                        break;
+                    case cgltf_attribute_type_joints:
+                        assert(attr.data->type == cgltf_type_vec4);
+                        assert(attr.data->component_type == cgltf_component_type_r_8u || attr.data->component_type == cgltf_component_type_r_16u);
+                        joint_indices = attr.data;
+                        break;
+                    case cgltf_attribute_type_weights:
+                        assert(attr.data->type == cgltf_type_vec4);
+                        assert(attr.data->component_type == cgltf_component_type_r_8u || attr.data->component_type == cgltf_component_type_r_16u || attr.data->component_type == cgltf_component_type_r_32f);
+                        joint_weights = attr.data;
+                        break;
+                }
             }
-        }
 
-        // Vertices
-        for (uint32_t j = 0; j < aiMesh.mNumVertices; j++)
-        {
-            UnpackedVertex& unpackedVertex = scene.unpackedVertices[vertexOffset];
-            Vertex& vertex = scene.vertices[vertexOffset++];
+            assert(positions);
+            assert(mesh.vertexNum == positions->count);
 
-            // Position
-            float3 position = float3(&aiMesh.mVertices[j].x);
-            vertex.position[0] = position.x;
-            vertex.position[1] = position.y;
-            vertex.position[2] = position.z;
-            unpackedVertex.position[0] = position.x;
-            unpackedVertex.position[1] = position.y;
-            unpackedVertex.position[2] = position.z;
-            mesh.aabb.Add(position);
+            if (gltfSubmesh.indices)
+            { // indexed geometry
+                assert(gltfSubmesh.indices->component_type == cgltf_component_type_r_32u || gltfSubmesh.indices->component_type == cgltf_component_type_r_16u || gltfSubmesh.indices->component_type == cgltf_component_type_r_8u);
+                assert(gltfSubmesh.indices->type == cgltf_type_scalar);
 
-            // Normal
-            float3 normal = -float3(&aiMesh.mNormals[j].x); // TODO: why negated?
-            if( All<CmpLess>(Abs(normal), 1e-6f) )
-                normal = float3(0.0f, 0.0f, 1.0f); // zero vector
+                auto [indexSrc, indexStride] = cgltfBufferIterator(gltfSubmesh.indices, 0);
 
-            unpackedVertex.normal[0] = normal.x;
-            unpackedVertex.normal[1] = normal.y;
-            unpackedVertex.normal[2] = normal.z;
-            vertex.normal = Packed::uf4_to_uint<10, 10, 10, 2>(normal * 0.5f + 0.5f);
+                switch (gltfSubmesh.indices->component_type)
+                {
+                    case cgltf_component_type_r_8u:
+                        if (!indexStride)
+                            indexStride = sizeof(uint8_t);
 
-            // Tangent
-            float4 tangent = tangents[j];
-            if( All<CmpLess>(Abs(float3(tangent.xmm)), 1e-6f) )
-                tangent = float4(0.0f, 0.0f, 1.0f, 1.0f); // zero vector
+                        for (size_t i_idx = 0; i_idx < mesh.indexNum; i_idx++)
+                        {
+                            scene.indices[mesh.indexOffset + i_idx] = (Index)(*(const uint8_t*)indexSrc);
+                            indexSrc += indexStride;
+                        }
+                        break;
+                    case cgltf_component_type_r_16u:
+                        if (!indexStride)
+                            indexStride = sizeof(uint16_t);
 
-            unpackedVertex.tangent[0] = tangent.x;
-            unpackedVertex.tangent[1] = tangent.y;
-            unpackedVertex.tangent[2] = tangent.z;
-            unpackedVertex.tangent[3] = tangent.w;
-            vertex.tangent = Packed::uf4_to_uint<10, 10, 10, 2>(tangent * 0.5f + 0.5f);
+                        for (size_t i_idx = 0; i_idx < mesh.indexNum; i_idx++)
+                        {
+                            scene.indices[mesh.indexOffset + i_idx] = (Index)(*(const uint16_t*)indexSrc);
+                            indexSrc += indexStride;
+                        }
+                        break;
+                    case cgltf_component_type_r_32u:
+                        if (!indexStride)
+                            indexStride = sizeof(uint32_t);
 
-            // Uv
-            if (aiMesh.HasTextureCoords(0))
+                        for (size_t i_idx = 0; i_idx < mesh.indexNum; i_idx++)
+                        {
+                            scene.indices[mesh.indexOffset + i_idx] = (Index)(*(const uint32_t*)indexSrc);
+                            indexSrc += indexStride;
+                        }
+                        break;
+                    default:
+                        assert(false);
+                }
+            }
+            else
+            { // unindexed geometry
+                for (size_t i_idx = 0; i_idx < mesh.vertexNum; i_idx++)
+                    scene.indices[mesh.indexOffset + i_idx] = (Index)i_idx;
+            }
+
+            if (positions)
             {
-                float u = Min( aiMesh.mTextureCoords[0][j].x, 65504.0f );
-                float v = Min( aiMesh.mTextureCoords[0][j].y, 65504.0f );
+                auto [positionSrc, positionStride] = cgltfBufferIterator(positions, sizeof(float) * 3);
 
-                unpackedVertex.uv[0] = u;
-                unpackedVertex.uv[1] = v;
-                vertex.uv = Packed::sf2_to_h2(u, v);
+                for (size_t v_idx = 0; v_idx < mesh.vertexNum; v_idx++)
+                {
+                    float3 position((const float*)positionSrc);
+
+                    UnpackedVertex& unpackedVertex = scene.unpackedVertices[mesh.vertexOffset + v_idx];
+                    unpackedVertex.position[0] = position.x;
+                    unpackedVertex.position[1] = position.y;
+                    unpackedVertex.position[2] = position.z;
+
+                    Vertex& vertex = scene.vertices[mesh.vertexOffset + v_idx];
+                    vertex.position[0] = position.x;
+                    vertex.position[1] = position.y;
+                    vertex.position[2] = position.z;
+
+                    mesh.aabb.Add(position);
+
+                    positionSrc += positionStride;
+                }
+            }
+
+            if (normals)
+            {
+                assert(normals->count == positions->count);
+
+                auto [normalSrc, normalStride] = cgltfBufferIterator(normals, sizeof(float) * 3);
+
+                for (size_t v_idx = 0; v_idx < mesh.vertexNum; v_idx++)
+                {
+                    float3 normal((const float*)normalSrc);
+
+                    UnpackedVertex& unpackedVertex = scene.unpackedVertices[mesh.vertexOffset + v_idx];
+                    unpackedVertex.normal[0] = normal.x;
+                    unpackedVertex.normal[1] = normal.y;
+                    unpackedVertex.normal[2] = normal.z;
+
+                    Vertex& vertex = scene.vertices[mesh.vertexOffset + v_idx];
+                    vertex.normal = Packed::uf4_to_uint<10, 10, 10, 2>(normal * 0.5f + 0.5f);
+
+                    normalSrc += normalStride;
+                }
+            }
+
+            if (texcoords)
+            {
+                assert(texcoords->count == positions->count);
+
+                auto [texcoordSrc, texcoordStride] = cgltfBufferIterator(texcoords, sizeof(float) * 2);
+
+                for (size_t v_idx = 0; v_idx < mesh.vertexNum; v_idx++)
+                {
+                    const float* uv = (const float*)texcoordSrc;
+
+                    float u = Min(uv[0], 65504.0f);
+                    float v = Min(uv[1], 65504.0f);
+
+                    UnpackedVertex& unpackedVertex = scene.unpackedVertices[mesh.vertexOffset + v_idx];
+                    unpackedVertex.uv[0] = u;
+                    unpackedVertex.uv[1] = v;
+
+                    Vertex& vertex = scene.vertices[mesh.vertexOffset + v_idx];
+                    vertex.uv = Packed::sf2_to_h2(u, v);
+
+                    texcoordSrc += texcoordStride;
+                }
             }
             else
             {
-                unpackedVertex.uv[0] = 0.0f;
-                unpackedVertex.uv[1] = 0.0f;
-                vertex.uv = 0;
+                for (size_t v_idx = 0; v_idx < mesh.vertexNum; v_idx++)
+                {
+                    UnpackedVertex& unpackedVertex = scene.unpackedVertices[mesh.vertexOffset + v_idx];
+                    unpackedVertex.uv[0] = 0.0f;
+                    unpackedVertex.uv[1] = 0.0f;
+
+                    Vertex& vertex = scene.vertices[mesh.vertexOffset + v_idx];
+                    vertex.uv = 0;
+                }
+            }
+
+            // Per primitive data and tangents
+            GeneratePrimitiveDataAndTangents(scene, mesh);
+        }
+    }
+
+    // Walk through the nodes and fill instances
+    const uint32_t instanceOffset = (uint32_t)scene.instances.size();
+    scene.instances.reserve(instanceOffset + objects->nodes_count);
+
+    std::map<cgltf_node*, std::vector<uint32_t>> nodeToInstanceMap;
+
+    std::function<void(cgltf_node*, float4x4)> traverseNode = [&](cgltf_node* node, const float4x4& parentTransform)
+    {
+        float4x4 worldTransform;
+        if (node->has_matrix)
+        {
+            const auto& tr = node->matrix;
+            float4x4 transform
+            (
+                tr[0], tr[4], tr[8], tr[12],
+                tr[1], tr[5], tr[9], tr[13],
+                tr[2], tr[6], tr[10], tr[14],
+                tr[3], tr[7], tr[11], tr[15]
+            );
+            worldTransform = parentTransform * transform;
+        }
+        else
+        {
+            float4x4 scale = float4x4::Identity();
+            if (node->has_scale)
+                scale.SetupByScale(node->scale);
+
+            float4x4 rotation = float4x4::Identity();
+            if (node->has_rotation)
+                rotation.SetupByQuaternion(node->rotation);
+
+            float4x4 translation = float4x4::Identity();
+            if (node->has_translation)
+                translation.SetupByTranslation(node->translation);
+
+            float4x4 localTransform = translation * (rotation * scale);
+            worldTransform = parentTransform * localTransform;
+        }
+
+        if (node->mesh)
+        {
+            float4x4 transform = worldTransform;
+            double3 position = ToDouble(transform.GetCol3().To3d());
+            transform.SetTranslation( float3::Zero() );
+
+            size_t meshIndex = node->mesh - objects->meshes;
+
+            std::vector<uint32_t>& vec = nodeToInstanceMap[node];
+
+            for (uint32_t primIndex = 0; primIndex < node->mesh->primitives_count; ++primIndex)
+            {
+                const cgltf_primitive& gltfSubmesh = node->mesh->primitives[primIndex];
+                
+                size_t materialIndex = gltfSubmesh.material - objects->materials;
+                size_t remappedMeshIndex = meshOffset + meshesPrimMap[meshIndex][primIndex];
+
+                Instance& instance = scene.instances.emplace_back();
+                instance.meshIndex = (uint32_t)remappedMeshIndex;
+                instance.position = position;
+                instance.rotation = transform;
+                instance.materialIndex = (uint32_t)(materialOffset + materialIndex);
+                instance.allowUpdate = allowUpdate;
+
+                vec.push_back((uint32_t)(scene.instances.size() - 1));
+
+                Mesh& m = scene.meshes[remappedMeshIndex];
+
+                cBoxf aabb;
+                TransformAabb(worldTransform, m.aabb, aabb);
+                
+                scene.aabb.Add(aabb);
             }
         }
 
-        // Primitive data
-        uint32_t triangleNum = mesh.indexNum / 3;
-        for (uint32_t j = 0; j < triangleNum; j++)
+        for (cgltf_size nodeIndex = 0; nodeIndex < node->children_count; ++nodeIndex)
+            traverseNode(node->children[nodeIndex], worldTransform);
+    };
+
+    // GLTF models expect Y up whereas framework has Z up
+    scene.mSceneToWorld.SetupByRotationX( Pi(0.5f) );
+
+    for (cgltf_size nodeIndex = 0; nodeIndex < objects->scene->nodes_count; ++nodeIndex)
+        traverseNode(objects->scene->nodes[nodeIndex], scene.mSceneToWorld);
+
+    // TODO: properly update "allowUpdate"
+    if (objects->animations_count)
+    {
+        for (uint32_t animIndex = 0; animIndex < objects->animations_count; ++animIndex)
         {
-            uint32_t primitiveIndex = mesh.indexOffset / 3 + j;
-            const UnpackedVertex& v0 = scene.unpackedVertices[ mesh.vertexOffset + scene.indices[primitiveIndex * 3] ];
-            const UnpackedVertex& v1 = scene.unpackedVertices[ mesh.vertexOffset + scene.indices[primitiveIndex * 3 + 1] ];
-            const UnpackedVertex& v2 = scene.unpackedVertices[ mesh.vertexOffset + scene.indices[primitiveIndex * 3 + 2] ];
+            cgltf_animation* gltfAnim = objects->animations + animIndex;
 
-            float3 p0(v0.position);
-            float3 p1(v1.position);
-            float3 p2(v2.position);
-
-            float3 edge20 = p2 - p0;
-            float3 edge10 = p1 - p0;
-            float worldArea = Max( Length( Cross(edge20, edge10) ), 1e-9f );
-
-            float3 uvEdge20 = float3(v2.uv[0], v2.uv[1], 0.0f) - float3(v0.uv[0], v0.uv[1], 0.0f);
-            float3 uvEdge10 = float3(v1.uv[0], v1.uv[1], 0.0f) - float3(v0.uv[0], v0.uv[1], 0.0f);
-            float uvArea = Length( Cross(uvEdge20, uvEdge10) );
-
-            Primitive& primitive = scene.primitives[primitiveIndex];
-            primitive.worldToUvUnits = uvArea == 0 ? 1.0f : Sqrt( uvArea / worldArea );
-
-            // Unsigned curvature
-            // https://computergraphics.stackexchange.com/questions/1718/what-is-the-simplest-way-to-compute-principal-curvature-for-a-mesh-triangle
-            float3 n0 = float3(v0.normal);
-            float3 n1 = float3(v1.normal);
-            float3 n2 = float3(v2.normal);
-
-            // Stage 1
-            float curvature10 = Abs( Dot33(n1 - n0, p1 - p0) ) / LengthSquared(p1 - p0);
-            float curvature21 = Abs( Dot33(n2 - n1, p2 - p1) ) / LengthSquared(p2 - p1);
-            float curvature02 = Abs( Dot33(n0 - n2, p0 - p2) ) / LengthSquared(p0 - p2);
-
-            primitive.curvature = Max(curvature10, curvature21);
-            primitive.curvature = Max(primitive.curvature, curvature02);
-
-            // Stage 2
-            float invTriArea = 1.0f / (worldArea * 0.5f);
-            curvature10 = Sqrt( LengthSquared(n1 - n0) * invTriArea );
-            curvature21 = Sqrt( LengthSquared(n2 - n1) * invTriArea );
-            curvature02 = Sqrt( LengthSquared(n0 - n2) * invTriArea );
-
-            primitive.curvature = Max(primitive.curvature, curvature10);
-            primitive.curvature = Max(primitive.curvature, curvature21);
-            primitive.curvature = Max(primitive.curvature, curvature02);
-        }
-
-        // Scene AABB
-        if (loadFromNodes)
-        {
-            for (const auto& instance : scene.instances)
-            {
-                if (instance.meshIndex == meshOffset + i)
+            scene.animations.push_back(Animation());
+            Animation& animation = scene.animations.back();
+            animation.name = gltfAnim->name;
+            
+            { // Setup scene graph
+                animation.sceneNodes.resize(objects->nodes_count);
+                for (uint32_t nodeIndex = 0; nodeIndex < objects->nodes_count; ++nodeIndex)
                 {
-                    float4x4 transform = instance.rotation;
-                    transform.AddTranslation( ToFloat(instance.position) );
+                    cgltf_node* gltfNode = objects->nodes + nodeIndex;
+                    SceneNode& sceneNode = animation.sceneNodes[nodeIndex];
 
-                    cBoxf aabb;
-                    TransformAabb(transform, mesh.aabb, aabb);
+                    sceneNode.children.resize(gltfNode->children_count);
+                    for (uint32_t childIndex = 0; childIndex < gltfNode->children_count; ++childIndex)
+                    {
+                        uint32_t index = (uint32_t)(gltfNode->children[childIndex] - objects->nodes);
+                        sceneNode.children[childIndex] = &animation.sceneNodes[index];
+                    }
 
-                    scene.aabb.Add(aabb);
+                    if (gltfNode->has_matrix)
+                    {
+                        const auto& tr = gltfNode->matrix;
+                        float4x4 transform
+                        (
+                            tr[0], tr[4], tr[8], tr[12],
+                            tr[1], tr[5], tr[9], tr[13],
+                            tr[2], tr[6], tr[10], tr[14],
+                            tr[3], tr[7], tr[11], tr[15]
+                        );
+                        DecomposeAffine(transform, sceneNode.translation, sceneNode.rotation, sceneNode.scale);
+                    }
+                    else
+                    {
+                        sceneNode.translation = gltfNode->has_translation ? float3(gltfNode->translation) : float3(0.0f, 0.0f, 0.0f);
+                        sceneNode.rotation = gltfNode->has_rotation ? float4(gltfNode->rotation) : float4(0.0f, 0.0f, 0.0f, 1.0f);
+                        sceneNode.scale = gltfNode->has_scale ? float3(gltfNode->scale) : float3(1.0f, 1.0f, 1.0f);
+                    }
+
+                    float4x4 translation;
+                    translation.SetupByTranslation(sceneNode.translation);
+                    float4x4 rotation;
+                    rotation.SetupByQuaternion(sceneNode.rotation);
+                    float4x4 scale;
+                    scale.SetupByScale(sceneNode.scale);
+                    sceneNode.localTransform = translation * (rotation * scale);
+
+                    sceneNode.isLocalTransformDirty = false;
+
+                    if (gltfNode->mesh)
+                    {
+                        sceneNode.instances = nodeToInstanceMap[gltfNode];
+                        sceneNode.name = gltfNode->mesh->name; // TODO: gltfNode->name?
+                    }
+                }
+
+                std::function<void(SceneNode*, SceneNode*)> setupGraphNodes = [&](SceneNode* parentNode, SceneNode* node)
+                {
+                    node->worldTransform = parentNode ? (parentNode->worldTransform * node->localTransform) : node->localTransform;
+                    node->parent = parentNode;
+
+                    for (auto child : node->children)
+                        setupGraphNodes(node, child);
+                };
+
+                for (cgltf_size nodeIndex = 0; nodeIndex < objects->scene->nodes_count; ++nodeIndex)
+                {
+                    uint32_t idx = (uint32_t)(objects->scene->nodes[nodeIndex] - objects->nodes);
+                    setupGraphNodes(nullptr, &animation.sceneNodes[idx]);
+                }
+            }
+
+            float animationTotalSec = 0.0f;
+            for (uint32_t samplerIndex = 0; samplerIndex < gltfAnim->samplers_count; ++samplerIndex)
+            {
+                cgltf_animation_sampler* animSampler = gltfAnim->samplers + samplerIndex;
+                float animTimeMaxSec = animSampler->input->has_max ? animSampler->input->max[0] : 0.0f;
+                animationTotalSec = Max(animationTotalSec, animTimeMaxSec);
+            }
+            animation.animationTimeSec = animationTotalSec;
+            animation.durationMs = animationTotalSec * 1000.0f;
+
+            std::function<AnimationTrackType(cgltf_interpolation_type)> convertTrackType = [](cgltf_interpolation_type value)
+            {
+                switch (value)
+                {
+                    default:
+                    case cgltf_interpolation_type_linear:
+                        return AnimationTrackType::Linear;
+                    case cgltf_interpolation_type_step:
+                        return AnimationTrackType::Step;
+                    case cgltf_interpolation_type_cubic_spline:
+                        return AnimationTrackType::CubicSpline;
+                }
+            };
+
+            for (uint32_t channelIndex = 0; channelIndex < gltfAnim->channels_count; ++channelIndex)
+            {
+                cgltf_animation_channel* animChannel = gltfAnim->channels + channelIndex;
+
+                uint32_t index = (uint32_t)(animChannel->target_node - objects->nodes);
+                SceneNode* sceneNode = animation.sceneNodes.data() + index;
+
+                if (animChannel->sampler->input->count == 0)
+                    continue;
+
+                if (std::find(animation.dynamicNodes.begin(), animation.dynamicNodes.end(), sceneNode) == animation.dynamicNodes.end())
+                    animation.dynamicNodes.push_back(sceneNode);
+
+                switch (animChannel->target_path)
+                {
+                    case cgltf_animation_path_type_translation:
+                    case cgltf_animation_path_type_scale:
+                    {
+                        bool isPosition = animChannel->target_path == cgltf_animation_path_type_translation;
+                        if (isPosition)
+                            animation.positionTracks.push_back(VectorAnimationTrack());
+                        else
+                            animation.scaleTracks.push_back(VectorAnimationTrack());
+
+                        VectorAnimationTrack& track = isPosition ? animation.positionTracks.back() : animation.scaleTracks.back();
+                        uint32_t frameCount = (uint32_t)animChannel->sampler->input->count;
+
+                        track.node = sceneNode;
+                        track.type = convertTrackType(animChannel->sampler->interpolation);
+                        auto [keysSrc, keysStride] = cgltfBufferIterator(animChannel->sampler->input, sizeof(float));
+                        auto [valuesSrc, valuesStride] = cgltfBufferIterator(animChannel->sampler->output, sizeof(float) * 3);
+                        track.keys.reserve(frameCount);
+                        track.values.reserve(frameCount);
+                        for (uint32_t frameIndex = 0; frameIndex < frameCount; ++frameIndex)
+                        {
+                            float key = *(float*)keysSrc;
+                            keysSrc += keysStride;
+                            track.keys.push_back(key);
+
+                            float3 value = float3((float*)valuesSrc);
+                            valuesSrc += valuesStride;
+                            track.values.push_back(value);
+                        }
+                        track.frameCount = frameCount;
+                    }
+                    break;
+
+                    case cgltf_animation_path_type_rotation:
+                    {
+                        animation.rotationTracks.push_back(QuatAnimationTrack());
+                        QuatAnimationTrack& track = animation.rotationTracks.back();
+                        uint32_t frameCount = (uint32_t)animChannel->sampler->input->count;
+
+                        track.node = sceneNode;
+                        track.type = convertTrackType(animChannel->sampler->interpolation);
+                        auto [keysSrc, keysStride] = cgltfBufferIterator(animChannel->sampler->input, sizeof(float));
+                        auto [valuesSrc, valuesStride] = cgltfBufferIterator(animChannel->sampler->output, sizeof(float) * 4);
+                        track.keys.reserve(frameCount);
+                        track.values.reserve(frameCount);
+                        for (uint32_t frameIndex = 0; frameIndex < frameCount; ++frameIndex)
+                        {
+                            float key = *(float*)keysSrc;
+                            keysSrc += keysStride;
+                            track.keys.push_back(key);
+
+                            float4 value = float4((float*)valuesSrc);
+                            valuesSrc += valuesStride;
+                            track.values.push_back(value);
+                        }
+                        track.frameCount = frameCount;
+                    }
+                    break;
                 }
             }
         }
-        else
-            scene.aabb.Add(mesh.aabb);
     }
 
-    // Count textures
-    aiString str;
-    uint32_t textureNum = 0;
-    for (uint32_t i = 0; i < aiScene.mNumMaterials; i++)
-    {
-        const aiMaterial* assimpMaterial = aiScene.mMaterials[i];
-        for (size_t j = 0; j < gSupportedTextureTypes.size(); j++)
-        {
-            if (assimpMaterial->GetTexture(gSupportedTextureTypes[j], 0, &str) == AI_SUCCESS)
-                textureNum++;
-        }
-    }
-
+    uint32_t textureNum = (uint32_t)objects->textures_count;
     size_t newCapacity = scene.textures.size() + textureNum;
     scene.textures.reserve(newCapacity);
 
-    // StaticTexture::Black
+    if (scene.textures.empty())
     {
-        Texture* texture = new Texture;
-        const std::string& texPath = GetFullPath("black.png", DataFolder::TEXTURES);
-        NRI_ABORT_ON_FALSE( LoadTexture(texPath, *texture) );
-        scene.textures.push_back(texture);
+        // StaticTexture::Black
+        {
+            Texture* texture = new Texture;
+            const std::string& texPath = GetFullPath("black.png", DataFolder::TEXTURES);
+            NRI_ABORT_ON_FALSE(LoadTexture(texPath, *texture));
+            scene.textures.push_back(texture);
+        }
+
+        // StaticTexture::White
+        {
+            Texture* texture = new Texture;
+            const std::string& texPath = GetFullPath("white.png", DataFolder::TEXTURES);
+            NRI_ABORT_ON_FALSE(LoadTexture(texPath, *texture));
+            scene.textures.push_back(texture);
+        }
+
+        // StaticTexture::Invalid
+        {
+            Texture* texture = new Texture;
+            const std::string& texPath = GetFullPath("checkerboard0.dds", DataFolder::TEXTURES);
+            NRI_ABORT_ON_FALSE(LoadTexture(texPath, *texture, true));
+            scene.textures.push_back(texture);
+        }
+
+        // StaticTexture::FlatNormal
+        {
+            Texture* texture = new Texture;
+            const std::string& texPath = GetFullPath("flatnormal.png", DataFolder::TEXTURES);
+            NRI_ABORT_ON_FALSE(LoadTexture(texPath, *texture));
+            scene.textures.push_back(texture);
+        }
+
+        // StaticTexture::ScramblingRanking1spp
+        {
+            Texture* texture = new Texture;
+            const std::string& texPath = GetFullPath("scrambling_ranking_128x128_2d_1spp.png", DataFolder::TEXTURES);
+            NRI_ABORT_ON_FALSE(LoadTexture(texPath, *texture));
+            texture->OverrideFormat(nri::Format::RGBA8_UINT);
+            scene.textures.push_back(texture);
+        }
+
+        // StaticTexture::SobolSequence
+        {
+            Texture* texture = new Texture;
+            const std::string& texPath = GetFullPath("sobol_256_4d.png", DataFolder::TEXTURES);
+            NRI_ABORT_ON_FALSE(LoadTexture(texPath, *texture));
+            texture->OverrideFormat(nri::Format::RGBA8_UINT);
+            scene.textures.push_back(texture);
+        }
     }
 
-    // StaticTexture::Invalid
-    {
-        Texture* texture = new Texture;
-        const std::string& texPath = GetFullPath("checkerboard0.dds", DataFolder::TEXTURES);
-        NRI_ABORT_ON_FALSE( LoadTexture(texPath, *texture, true) );
-        scene.textures.push_back(texture);
-    }
-
-    // StaticTexture::FlatNormal
-    {
-        Texture* texture = new Texture;
-        const std::string& texPath = GetFullPath("flatnormal.png", DataFolder::TEXTURES);
-        NRI_ABORT_ON_FALSE( LoadTexture(texPath, *texture) );
-        scene.textures.push_back(texture);
-    }
-
-    // StaticTexture::ScramblingRanking1spp
-    {
-        Texture* texture = new Texture;
-        const std::string& texPath = GetFullPath("scrambling_ranking_128x128_2d_1spp.png", DataFolder::TEXTURES);
-        NRI_ABORT_ON_FALSE( LoadTexture(texPath, *texture) );
-        texture->OverrideFormat(nri::Format::RGBA8_UINT);
-        scene.textures.push_back(texture);
-    }
-
-    // StaticTexture::SobolSequence
-    {
-        Texture* texture = new Texture;
-        const std::string& texPath = GetFullPath("sobol_256_4d.png", DataFolder::TEXTURES);
-        NRI_ABORT_ON_FALSE( LoadTexture(texPath, *texture) );
-        texture->OverrideFormat(nri::Format::RGBA8_UINT);
-        scene.textures.push_back(texture);
-    }
-
-    // Load only unique textures
-    for (uint32_t i = 0; i < aiScene.mNumMaterials; i++)
+    // Materials
+    std::unordered_map<const cgltf_image*, uint32_t> textures;
+    for (uint32_t i = 0; i < materialNum; i++)
     {
         Material& material = scene.materials[materialOffset + i];
-        uint32_t* textureIndices = &material.diffuseMapIndex;
 
-        const aiMaterial* assimpMaterial = aiScene.mMaterials[i];
-        for (size_t j = 0; j < gSupportedTextureTypes.size(); j++)
+        const cgltf_material& gltfMaterial = objects->materials[i];
+            
+        uint32_t* textureIndices = &material.baseColorTexIndex;
+        cgltf_texture* maps[4] = {nullptr};
+
+        if (gltfMaterial.has_pbr_metallic_roughness)
         {
-            aiTextureType type = gSupportedTextureTypes[j];
-            if (assimpMaterial->GetTexture(type, 0, &str) == AI_SUCCESS)
+            maps[0] = gltfMaterial.pbr_metallic_roughness.base_color_texture.texture;
+            maps[1] = gltfMaterial.pbr_metallic_roughness.metallic_roughness_texture.texture;
+            material.baseColorAndMetalnessScale.x = gltfMaterial.pbr_metallic_roughness.base_color_factor[0];
+            material.baseColorAndMetalnessScale.y = gltfMaterial.pbr_metallic_roughness.base_color_factor[1];
+            material.baseColorAndMetalnessScale.z = gltfMaterial.pbr_metallic_roughness.base_color_factor[2];
+            material.baseColorAndMetalnessScale.w = gltfMaterial.pbr_metallic_roughness.metallic_factor;
+            material.emissiveAndRoughnessScale.w = gltfMaterial.pbr_metallic_roughness.roughness_factor;
+            // TODO: opacity = gltfMaterial.pbr_metallic_roughness.base_color_factor[3]
+        }
+        else if (gltfMaterial.has_pbr_specular_glossiness)
+        {
+            // TODO: "pbr_specular_glossiness" model is not supported!
+            maps[0] = gltfMaterial.pbr_specular_glossiness.diffuse_texture.texture;
+            maps[1] = gltfMaterial.pbr_specular_glossiness.specular_glossiness_texture.texture;
+        }
+
+
+        bool useTransmission = false;
+        if (gltfMaterial.has_transmission)
+        {
+            // TODO: use "gltfMaterial.transmission"
+            useTransmission = true;
+        }
+
+        maps[2] = gltfMaterial.normal_texture.texture;
+        // TODO: use "gltfMaterial.alpha_cutoff"?
+        // TODO: use "gltfMaterial.double_sided"?
+
+        maps[3] = gltfMaterial.emissive_texture.texture;
+        material.emissiveAndRoughnessScale.x = gltfMaterial.emissive_factor[0];
+        material.emissiveAndRoughnessScale.y = gltfMaterial.emissive_factor[1];
+        material.emissiveAndRoughnessScale.z = gltfMaterial.emissive_factor[2];
+
+        for (uint32_t j = 0; j < 4; j++)
+        {
+            cgltf_texture* texture = maps[j];
+            if (!texture)
+                continue;
+
+            // See if the extensions include a DDS image
+            const cgltf_image* ddsImage = ParseDdsImage(texture, objects);
+            if ((!texture->image || (!texture->image->uri && !texture->image->buffer_view)) && (!ddsImage || (!ddsImage->uri && !ddsImage->buffer_view)))
+                continue;
+
+            // Pick either DDS or standard image, prefer DDS
+            const cgltf_image* activeImage = (ddsImage && (ddsImage->uri || ddsImage->buffer_view)) ? ddsImage : texture->image;
+
+            // Load a texture if not already loaded
+            uint32_t textureIndex = 0;
+
+            auto it = textures.find(activeImage);
+            if (it == textures.end())
             {
-                std::string texPath = baseDir + str.data;
-                const uint64_t hash = ComputeHash(texPath.c_str(), (uint32_t)texPath.length());
+                assert(!activeImage->buffer_view);
 
-                const auto comparePred = [&hash](const Texture* texture)
-                { return hash == texture->hash; };
-
-                auto findResult = std::find_if(scene.textures.begin(), scene.textures.end(), comparePred);
-                if (findResult == scene.textures.end())
+                if (!activeImage->buffer_view)
                 {
-                    const bool isMaterial = type == aiTextureType_DIFFUSE || type == aiTextureType_EMISSIVE || type == aiTextureType_SPECULAR;
+                    Texture* tex = new Texture;
 
-                    Texture* texture = new Texture;
-                    bool isLoaded = LoadTexture(texPath, *texture, isMaterial);
+                    const bool computeAlphaMode = j == 0;
+                    const bool makeSRGB = j != 2;
+
+                    std::string filename = (normPath.parent_path() / activeImage->uri).string();
+                    bool isLoaded = LoadTexture(filename, *tex, computeAlphaMode);
+                    if (!isLoaded)
+                    {
+                        std::string filenameDDS = filename.substr(0, filename.find_last_of('.')) + ".dds";
+                        isLoaded = LoadTexture(filenameDDS, *tex, computeAlphaMode);
+                    }
 
                     if (isLoaded)
                     {
-                        if (isMaterial)
-                            texture->OverrideFormat(MakeSRGBFormat(texture->format));
+                        if (makeSRGB)
+                            tex->OverrideFormat(MakeSRGBFormat(tex->format));
 
-                        textureIndices[j] = (uint32_t)scene.textures.size();
-                        scene.textures.push_back(texture);
+                        textureIndex = (uint32_t)scene.textures.size();
+                        scene.textures.push_back(tex);
+
+                        textures[activeImage] = textureIndex;
                     }
                     else
-                        delete texture;
+                        delete tex;
                 }
-                else
-                    textureIndices[j] = (uint32_t)(findResult - scene.textures.begin());
             }
+            else
+                textureIndex = it->second;
+
+            textureIndices[j] = textureIndex;
         }
 
-        const Texture* diffuseTexture = scene.textures[material.diffuseMapIndex];
-        material.alphaMode = diffuseTexture->alphaMode;
+        if (material.emissiveTexIndex == StaticTexture::Black && (material.emissiveAndRoughnessScale.x != 0.0f || material.emissiveAndRoughnessScale.y != 0.0f || material.emissiveAndRoughnessScale.z != 0.0f))
+            material.emissiveTexIndex = StaticTexture::White;
+
+        if (material.baseColorTexIndex == StaticTexture::Black && (material.baseColorAndMetalnessScale.x != 0.0f || material.baseColorAndMetalnessScale.y != 0.0f || material.baseColorAndMetalnessScale.z != 0.0f))
+            material.baseColorTexIndex = StaticTexture::White;
+
+        if (material.roughnessMetalnessTexIndex == StaticTexture::Black && (material.emissiveAndRoughnessScale.w != 0.0f || material.baseColorAndMetalnessScale.w != 0.0f))
+            material.roughnessMetalnessTexIndex = StaticTexture::White;
+
+        const Texture* diffuseTexture = scene.textures[material.baseColorTexIndex];
+        material.alphaMode = useTransmission ? AlphaMode::TRANSPARENT : diffuseTexture->alphaMode;
+
+        // TODO: remove strange polygon on the window in Kitchen scene
+        if (strstr(gltfMaterial.name, "Material_295"))
+            material.alphaMode = AlphaMode::OFF;
+
+        /*
+        switch (gltfMaterial.alpha_mode)
+        {
+        case cgltf_alpha_mode_opaque:
+            material.alphaMode = useTransmission ? AlphaMode::OPAQUE : AlphaMode::OPAQUE;
+            break;
+        case cgltf_alpha_mode_mask:
+            material.alphaMode = useTransmission ? AlphaMode::PREMULTIPLIED : AlphaMode::PREMULTIPLIED;
+            break;
+        case cgltf_alpha_mode_blend:
+            material.alphaMode = useTransmission ? AlphaMode::TRANSPARENT : AlphaMode::TRANSPARENT;
+            break;
+        }
+        */
     }
 
-    // Cleanup
-    aiReleaseImport(&aiScene);
-
-    // TODO: some sorting can be added here (remapping is needed)
-
-    // Set "Instance::allowUpdate" state
-    for (Animation& animation : scene.animations)
-        animation.rootNode.SetAllowUpdate(scene, allowUpdate);
+    cgltf_free(objects);
 
     return true;
 }
 
-void utils::AnimationNode::Update(float time)
-{
-    float3 scale = scaleValues.back();
-    if (time < scaleKeys.back())
-    {
-        uint32_t firstID = FindCurrentIndex(scaleKeys, time);
-        uint32_t secondID = (firstID + 1) % scaleKeys.size();
-
-        float weight = SafeLinearstep(scaleKeys[firstID], scaleKeys[secondID], time);
-        scale = Lerp(scaleValues[firstID], scaleValues[secondID], float3(weight));
-    }
-
-    float4 rotation = rotationValues.back();
-    if (time < rotationKeys.back())
-    {
-        uint32_t firstID = FindCurrentIndex(rotationKeys, time);
-        uint32_t secondID = (firstID + 1) % rotationKeys.size();
-
-        float weight = SafeLinearstep(rotationKeys[firstID], rotationKeys[secondID], time);
-        float4 a = rotationValues[firstID];
-        float4 b = rotationValues[secondID];
-        float theta = Dot44(a, b);
-        a = (theta < 0.0f) ? -a : a;
-        rotation = Slerp(a, b, weight);
-    }
-
-    double3 position = positionValues.back();
-    if (time < positionKeys.back())
-    {
-        uint32_t firstID = FindCurrentIndex(positionKeys, time);
-        uint32_t secondID = (firstID + 1) % positionKeys.size();
-
-        float weight = SafeLinearstep(positionKeys[firstID], positionKeys[secondID], time);
-        position = Lerp(positionValues[firstID], positionValues[secondID], double3((double)weight));
-    }
-
-    float4x4 mScale;
-    mScale.SetupByScale(scale);
-
-    float4x4 mRotation;
-    mRotation.SetupByQuaternion(rotation);
-
-    float4x4 mTranslation;
-    mTranslation.SetupByTranslation( ToFloat(position) );
-
-    mTransform = mTranslation * (mRotation * mScale);
-}
-
-void utils::NodeTree::SetAllowUpdate(utils::Scene& scene, bool parentAllowUpdate)
-{
-    bool allowUpdate = parentAllowUpdate || animationNodeIndex != InvalidIndex;
-
-    for (NodeTree& child : children)
-        child.SetAllowUpdate(scene, allowUpdate);
-
-    for (uint32_t instanceIndex : instances)
-    {
-        Instance& instance = scene.instances[instanceIndex];
-        instance.allowUpdate = allowUpdate;
-    }
-}
-
-void utils::NodeTree::Animate(Scene& scene, const std::vector<AnimationNode>& animationNodes, const float4x4& parentTransform, float4x4* outTransform)
-{
-    const float4x4& transform = animationNodeIndex != InvalidIndex ? animationNodes[animationNodeIndex].mTransform : mTransform;
-    float4x4 combinedTransform = parentTransform * transform;
-
-    for (NodeTree& child : children)
-        child.Animate(scene, animationNodes, combinedTransform, outTransform);
-
-    if (outTransform && children.empty())
-        *outTransform = combinedTransform;
-
-    double3 position = ToDouble( combinedTransform.GetCol3().To3d() );
-    combinedTransform.SetTranslation( float3::Zero() );
-
-    for (uint32_t instanceIndex : instances)
-    {
-        Instance& instance = scene.instances[instanceIndex];
-        instance.rotation = combinedTransform;
-        instance.position = position;
-    }
-}
-
-void utils::Scene::Animate(float animationSpeed, float elapsedTime, float& animationProgress, uint32_t animationIndex, float4x4* outCameraTransform)
+void utils::Scene::Animate(float animationSpeed, float elapsedTime, float& animationProgress, uint32_t animationIndex)
 {
     Animation& animation = animations[animationIndex];
 
@@ -1144,35 +1385,141 @@ void utils::Scene::Animate(float animationSpeed, float elapsedTime, float& anima
 
     animationProgress = t * 100.0f;
 
-    // Update animation nodes
-    for (AnimationNode& animationNode : animation.animationNodes)
-        animationNode.Update(t);
+    float animTimeSec = t * animation.animationTimeSec;
 
-    // Recursively update instances in the nood tree
-    animation.rootNode.Animate(*this, animation.animationNodes, mSceneToWorld);
-
-    // Update camera animation (if requested)
-    if (outCameraTransform)
+    std::function<uint32_t(std::vector<float>&, float)> findKeyIndex = [](std::vector<float>& keys, float time)
     {
-        float4x4 transform;
-        animation.cameraNode.Animate(*this, animation.animationNodes, float4x4::Identity(), &transform);
+        if (time <= keys[0])
+            return (uint32_t)0;
 
-        // Inverse 3x3 rotation (without scene-to-world rotation)
-        float3 pos = transform.GetCol3().xmm;
-        transform.SetTranslation( float3::Zero() );
-        transform.Transpose();
-        transform.SetTranslation(pos);
+        if (time >= keys.back())
+            return (uint32_t)(keys.size() - 1);
 
-        // Transpose
-        transform.Transpose();
+        for (int32_t index = (int32_t)keys.size() - 1; index >= 1; --index)
+        {
+            if (time >= keys[index])
+                return (uint32_t)index;
+        }
 
-        // Apply scene-to-world rotation
-        float4x4 sceneToWorldT = mSceneToWorld;
-        sceneToWorldT.Transpose();
+        return (uint32_t)0;
+    };
 
-        float4x4 finalTransform = mSceneToWorld * (transform * sceneToWorldT);
+    for (auto& track : animation.positionTracks)
+    {
+        uint32_t from = findKeyIndex(track.keys, animTimeSec);
+        uint32_t to = Min(track.frameCount - 1, from + 1);
+        float keyFrom = track.keys[from];
+        float keyTo = track.keys[to];
+        float time = animTimeSec < keyFrom ? keyFrom : (animTimeSec > keyTo ? keyTo : animTimeSec);
+        float factor = to != from ? (time - keyFrom) / (keyTo - keyFrom) : 0.0f;
+        float3 value = float3(0.0f, 0.0f, 0.0f);
+        switch (track.type)
+        {
+            case AnimationTrackType::Step:
+            {
+                value = track.values[from];
+            }
+            break;
 
-        // Result
-        *outCameraTransform = finalTransform;
+            case AnimationTrackType::CubicSpline: //TODO implement CubicSpline
+            case AnimationTrackType::Linear:
+            {
+                value = Lerp(track.values[from], track.values[to], float3(factor));
+            }
+            break;
+        }
+        track.node->translation = value;
+        track.node->isLocalTransformDirty = true;
     }
+
+    for (auto& track : animation.rotationTracks)
+    {
+        uint32_t from = findKeyIndex(track.keys, animTimeSec);
+        uint32_t to = Min(track.frameCount - 1, from + 1);
+        float keyFrom = track.keys[from];
+        float keyTo = track.keys[to];
+        float time = animTimeSec < keyFrom ? keyFrom : (animTimeSec > keyTo ? keyTo : animTimeSec);
+        float factor = to != from ? (time - keyFrom) / (keyTo - keyFrom) : 0.0f;
+        float4 value = float4(0.0f, 0.0f, 0.0f, 1.0f);
+        switch (track.type)
+        {
+            case AnimationTrackType::Step:
+            {
+                value = track.values[from];
+            }
+            break;
+
+            case AnimationTrackType::CubicSpline: //TODO implement CubicSpline
+            case AnimationTrackType::Linear:
+            {
+                float4 a = track.values[from];
+                float4 b = track.values[to];
+                float theta = Dot44(a, b);
+                a = (theta < 0.0f) ? -a : a;
+                value = Slerp(a, b, factor);
+            }
+            break;
+        }
+        track.node->rotation = value;
+        track.node->isLocalTransformDirty = true;
+    }
+
+    for (auto& track : animation.scaleTracks)
+    {
+        uint32_t from = findKeyIndex(track.keys, animTimeSec);
+        uint32_t to = Min(track.frameCount - 1, from + 1);
+        float keyFrom = track.keys[from];
+        float keyTo = track.keys[to];
+        float time = animTimeSec < keyFrom ? keyFrom : (animTimeSec > keyTo ? keyTo : animTimeSec);
+        float factor = to != from ? (time - keyFrom) / (keyTo - keyFrom) : 0.0f;
+        float3 value = float3(1.0f, 1.0f, 1.0f);
+        switch (track.type)
+        {
+            case AnimationTrackType::Step:
+                value = track.values[from];
+                break;
+
+            case AnimationTrackType::CubicSpline: //TODO implement CubicSpline
+            case AnimationTrackType::Linear:
+                value = Lerp(track.values[from], track.values[to], float3(factor));
+                break;
+        }
+        track.node->scale = value;
+        track.node->isLocalTransformDirty = true;
+    }
+
+    std::function<void(SceneNode*)> updateChain = [&](SceneNode* sceneNode)
+    {
+        if (sceneNode->isLocalTransformDirty)
+        {
+            float4x4 translation;
+            translation.SetupByTranslation(sceneNode->translation);
+            float4x4 rotation;
+            rotation.SetupByQuaternion(sceneNode->rotation);
+            float4x4 scale;
+            scale.SetupByScale(sceneNode->scale);
+            sceneNode->localTransform = translation * (rotation * scale);
+
+            sceneNode->isLocalTransformDirty = false;
+        }
+        sceneNode->worldTransform = sceneNode->parent ? (sceneNode->parent->worldTransform * sceneNode->localTransform) : (this->mSceneToWorld * sceneNode->localTransform);
+
+        float4x4 transform = sceneNode->worldTransform;
+        double3 position = ToDouble(transform.GetCol3().To3d());
+        transform.SetTranslation(float3::Zero());
+
+        for (auto instanceIndex : sceneNode->instances)
+        {
+            Instance& instance = this->instances[instanceIndex];
+            instance.rotation = transform;
+            instance.position = position;
+        }
+
+        for (auto child : sceneNode->children)
+            updateChain(child);
+    };
+
+    // TODO: this could be optimized by only updating roots of the dynamic chains, i.e. when one dynamic node is hierarchical child of another
+    for (auto node : animation.dynamicNodes)
+        updateChain(node);
 }

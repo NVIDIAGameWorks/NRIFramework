@@ -44,7 +44,6 @@ compile_commands.json
 *.manifest
 
 # external packages
-External/Assimp/
 External/Detex/
 External/Glfw/
 External/ImGui/

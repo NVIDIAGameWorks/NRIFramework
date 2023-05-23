@@ -2,11 +2,6 @@
   <dependency name="imgui" linkPath="External/ImGui">
     <package name="imgui" version="1.82_WIP-master-e06e1c48" />
   </dependency>
-  <dependency name="assimp" linkPath="External/Assimp">
-    <package name="assimp" version="5.0.1_release_windows-x86_64" platforms="windows-x86_64" />
-    <package name="assimp" version="5.0.1_release_glibc2.27_linux-x86_64" platforms="linux-x86_64" />
-    <package name="assimp" version="v5.0.1_glibc2.27-linux-aarch64" platforms="linux-aarch64" />
-  </dependency>
   <dependency name="detex" linkPath="External/Detex">
     <package name="detex" version="0.1.2-master-934098a4" />
   </dependency>

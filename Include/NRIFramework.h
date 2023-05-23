@@ -11,8 +11,8 @@ license agreement from NVIDIA CORPORATION is strictly prohibited.
 #pragma once
 
 #define NRI_FRAMEWORK_VERSION_MAJOR 0
-#define NRI_FRAMEWORK_VERSION_MINOR 6
-#define NRI_FRAMEWORK_VERSION_DATE "5 April 2023"
+#define NRI_FRAMEWORK_VERSION_MINOR 7
+#define NRI_FRAMEWORK_VERSION_DATE "23 May 2023"
 #define NRI_FRAMEWORK 1
 
 // 3rd party
@@ -103,7 +103,7 @@ public:
 
 protected:
     nri::MemoryAllocatorInterface m_MemoryAllocatorInterface = {};
-    std::string m_SceneFile = "ShaderBalls/ShaderBalls.obj";
+    std::string m_SceneFile = "ShaderBalls/ShaderBalls.gltf";
     sFastRand m_FastRandState = {};
     Camera m_Camera;
     Timer m_Timer;

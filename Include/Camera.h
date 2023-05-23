@@ -24,7 +24,7 @@ struct CameraDesc
     float orthoRange = 0.0f;
     float timeScale = 0.5f;
     bool isProjectionReversed = false;
-    bool isLeftHanded = true;
+    bool isPositiveZ = true;
     bool isCustomMatrixSet = false;
     float4x4 customMatrix = float4x4::Identity();
 };
@@ -38,7 +38,6 @@ struct CameraState
     float4x4 mViewToWorld = float4x4::Identity();
     float4x4 mWorldToClip = float4x4::Identity();
     float4x4 mClipToWorld = float4x4::Identity();
-    float4 frustum = {};
     float3 position = {};
     float3 rotation = {};
     float2 viewportJitter = {};
@@ -72,7 +71,6 @@ public:
 public:
     CameraState state = {};
     CameraState statePrev = {};
-    float m_IsOrtho = 0.0f;
 private:
     bool m_IsRelative = false;
 };

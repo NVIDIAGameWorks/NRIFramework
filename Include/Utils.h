@@ -23,19 +23,21 @@ namespace utils
 
     typedef std::vector<std::vector<uint8_t>> ShaderCodeStorage;
     typedef void* Mip;
+    typedef uint32_t Index;
 
     constexpr uint32_t InvalidIndex = uint32_t(-1);
 
     enum StaticTexture : uint32_t
     {
         Black,
+        White,
         Invalid,
         FlatNormal,
         ScramblingRanking1spp,
         SobolSequence
     };
 
-    enum class AlphaMode
+    enum class AlphaMode : uint32_t
     {
         OPAQUE,
         PREMULTIPLIED,
@@ -43,13 +45,20 @@ namespace utils
         OFF // alpha is 0 everywhere
     };
 
-    enum class DataFolder
+    enum class DataFolder : uint8_t
     {
         ROOT,
         SHADERS,
         TEXTURES,
         SCENES,
         TESTS
+    };
+
+    enum class AnimationTrackType : uint8_t
+    {
+        Step,
+        Linear,
+        CubicSpline
     };
 
     const char* GetFileName(const std::string& path);
@@ -62,9 +71,8 @@ namespace utils
 
     struct Texture
     {
-        Mip* mips = nullptr;
         std::string name;
-        uint64_t hash = 0;
+        Mip* mips = nullptr;
         AlphaMode alphaMode = AlphaMode::OPAQUE;
         nri::Format format = nri::Format::UNKNOWN;
         uint16_t width = 0;
@@ -102,10 +110,13 @@ namespace utils
 
     struct Material
     {
-        uint32_t diffuseMapIndex = StaticTexture::Black; // TODO: use StaticTexture::Invalid for debug purposes
-        uint32_t specularMapIndex = StaticTexture::Black;
-        uint32_t normalMapIndex = StaticTexture::FlatNormal;
-        uint32_t emissiveMapIndex = StaticTexture::Black;
+        float4 baseColorAndMetalnessScale = float4(1.0f);
+        float4 emissiveAndRoughnessScale = float4(1.0f);
+
+        uint32_t baseColorTexIndex = StaticTexture::Black; // TODO: use StaticTexture::Invalid for debug purposes
+        uint32_t roughnessMetalnessTexIndex = StaticTexture::Black;
+        uint32_t normalTexIndex = StaticTexture::FlatNormal;
+        uint32_t emissiveTexIndex = StaticTexture::Black;
         AlphaMode alphaMode = AlphaMode::OPAQUE;
 
         inline bool IsOpaque() const
@@ -121,7 +132,7 @@ namespace utils
         { return alphaMode == AlphaMode::OFF; }
 
         inline bool IsEmissive() const
-        { return emissiveMapIndex != StaticTexture::Black; }
+        { return emissiveTexIndex != StaticTexture::Black && (emissiveAndRoughnessScale.x != 0.0f || emissiveAndRoughnessScale.y != 0.0f || emissiveAndRoughnessScale.z != 0.0f); }
     };
 
     struct Instance
@@ -160,53 +171,59 @@ namespace utils
         float uv[2];
         float normal[3];
         float tangent[4];
+        float curvature;
     };
 
     struct Primitive
     {
         float worldToUvUnits;
-        float curvature;
     };
 
-    struct AnimationNode
+    struct SceneNode
     {
-        std::vector<double3> positionValues;
-        std::vector<float4> rotationValues;
-        std::vector<float3> scaleValues;
-        std::vector<float> positionKeys;
-        std::vector<float> rotationKeys;
-        std::vector<float> scaleKeys;
-        float4x4 mTransform = float4x4::Identity();
-
-        void Update(float time);
-    };
-
-    struct NodeTree
-    {
-        std::vector<NodeTree> children;
+        std::vector<SceneNode*> children;
         std::vector<uint32_t> instances;
-        float4x4 mTransform = float4x4::Identity();
-        uint64_t hash = 0;
-        uint32_t animationNodeIndex = InvalidIndex;
+        std::string name;
+        SceneNode* parent = nullptr;
+        float4x4 localTransform;
+        float4x4 worldTransform;
+        float4 rotation;
+        float3 translation;
+        float3 scale;
+        bool isLocalTransformDirty = true;
+    };
 
-        void Animate(utils::Scene& scene, const std::vector<AnimationNode>& animationNodes, const float4x4& parentTransform, float4x4* outTransform = nullptr);
-        void SetAllowUpdate(utils::Scene& scene, bool allowUpdate);
+    struct VectorAnimationTrack
+    {
+        std::vector<float> keys;
+        std::vector<float3> values;
+        SceneNode* node = nullptr;
+        uint32_t frameCount = 0;
+        AnimationTrackType type = AnimationTrackType::Linear;
+    };
+
+    struct QuatAnimationTrack
+    {
+        std::vector<float> keys;
+        std::vector<float4> values;
+        SceneNode* node = nullptr;
+        uint32_t frameCount = 0;
+        AnimationTrackType type = AnimationTrackType::Linear;
     };
 
     struct Animation
     {
-        std::vector<AnimationNode> animationNodes;
-        NodeTree rootNode;
-        NodeTree cameraNode;
-        std::string animationName;
+        std::vector<SceneNode> sceneNodes;
+        std::vector<SceneNode*> dynamicNodes;
+        std::vector<VectorAnimationTrack> positionTracks;
+        std::vector<QuatAnimationTrack> rotationTracks;
+        std::vector<VectorAnimationTrack> scaleTracks;
+        std::string name;
         float durationMs = 0.0f;
-        float animationProgress;
+        float animationProgress = 0.0f;
         float sign = 1.0f;
-        float normalizedTime;
-        bool hasCameraAnimation;
+        float animationTimeSec = 0.0f;
     };
-
-    typedef uint16_t Index;
 
     struct Scene
     {
@@ -228,7 +245,7 @@ namespace utils
         float4x4 mSceneToWorld = float4x4::Identity();
         cBoxf aabb;
 
-        void Animate(float animationSpeed, float elapsedTime, float& animationProgress, uint32_t animationIndex, float4x4* outCameraTransform);
+        void Animate(float animationSpeed, float elapsedTime, float& animationProgress, uint32_t animationIndex);
 
         inline void UnloadTextureData()
         {

@@ -64,13 +64,9 @@ endif ()
 if (WIN32)
     find_library (GLFW_RELEASE_LIB NAMES glfw3 PATHS "External/Glfw/build-${BIN_ARCHITECTURE}/Release/src" REQUIRED)
     find_library (GLFW_DEBUG_LIB NAMES glfw3 PATHS "External/Glfw/build-${BIN_ARCHITECTURE}/Debug/src" REQUIRED)
-    find_library (ASSIMP_LIB NAMES assimp-vc142-mt PATHS "External/Assimp/lib/${BIN_ARCHITECTURE}" REQUIRED)
-    find_file (INPUT_ASSIMP_SHARED_LIB NAMES assimp-vc142-mt.dll PATHS "External/Assimp/bin/${BIN_ARCHITECTURE}" REQUIRED)
 else ()
     find_library (GLFW_RELEASE_LIB NAMES glfw3 PATHS "External/Glfw/build/Release/src" REQUIRED)
     find_library (GLFW_DEBUG_LIB NAMES glfw3 PATHS "External/Glfw/build/Debug/src" REQUIRED)
-    find_library (INPUT_ASSIMP_SHARED_LIB NAMES assimp PATHS "External/Assimp/bin" REQUIRED)
-    set (ASSIMP_LIB ${INPUT_ASSIMP_SHARED_LIB})
 
     if (UNIX)
         find_path (XLIB_HEADERS NAMES "X11/Xlib.h")
@@ -151,22 +147,16 @@ source_group ("Source" FILES ${FRAMEWORK_SOURCE})
 file (GLOB FRAMEWORK_HEADERS "Include/*.hpp" "Include/*.h")
 source_group ("Include" FILES ${FRAMEWORK_HEADERS})
 add_library (${PROJECT_NAME} STATIC ${FRAMEWORK_SOURCE} ${FRAMEWORK_HEADERS} ${MATHLIB_HEADERS})
-target_link_libraries (${PROJECT_NAME} PRIVATE ImGui Detex ${ASSIMP_LIB} ${GLFW_LIB})
+target_link_libraries (${PROJECT_NAME} PRIVATE ImGui Detex ${GLFW_LIB})
 
 if (UNIX)
     target_link_libraries (${PROJECT_NAME} PRIVATE ${CMAKE_DL_LIBS} pthread X11)
 endif ()
 
-target_include_directories (${PROJECT_NAME} PRIVATE "Source" "Include" "External" "External/NRI/Include" "External/Assimp/include")
+target_include_directories (${PROJECT_NAME} PRIVATE "Source" "Include" "External" "External/NRI/Include")
 target_compile_definitions (${PROJECT_NAME} PRIVATE ${COMPILE_DEFINITIONS})
 target_compile_options (${PROJECT_NAME} PRIVATE ${COMPILE_OPTIONS})
 set_property (TARGET ${PROJECT_NAME} PROPERTY FOLDER ${PROJECT_NAME})
-
-get_filename_component (INPUT_ASSIMP_SHARED_LIB_NAME ${INPUT_ASSIMP_SHARED_LIB} NAME)
-set (OUTPUT_ASSIMP_SHARED_LIB ${GLOBAL_BIN_OUTPUT_PATH}/$<CONFIG>/${INPUT_ASSIMP_SHARED_LIB_NAME})
-add_custom_command (TARGET ${PROJECT_NAME} POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different ${INPUT_ASSIMP_SHARED_LIB} ${OUTPUT_ASSIMP_SHARED_LIB}
-    COMMAND_EXPAND_LISTS)
 
 # External/ShaderMake
 if (NOT TARGET ShaderMake)
