@@ -29,8 +29,8 @@ void Camera::Initialize(const float3& position, const float3& lookAt, bool isRel
 
 void Camera::Update(const CameraDesc& desc, uint32_t frameIndex)
 {
-    uint32_t projFlags = desc.isProjectionReversed ? PROJ_REVERSED_Z : 0;
-    projFlags |= desc.isPositiveZ ? PROJ_POSITIVE_Z : 0;
+    uint32_t projFlags = desc.isReversedZ ? PROJ_REVERSED_Z : 0;
+    projFlags |= desc.isPositiveZ ? PROJ_LEFT_HANDED : 0;
 
     // Position
     const float3 vRight = state.mWorldToView.GetRow0().To3d();

@@ -528,7 +528,7 @@ static std::pair<const uint8_t*, size_t> cgltfBufferIterator(const cgltf_accesso
 
 // GLTF only support DDS images through the MSFT_texture_dds extension.
 // Since cgltf does not support this extension, we parse the custom extension string as json here.
-// See https://github.com/KhronosGroup/GLTF/tree/master/extensions/2.0/Vendor/MSFT_texture_dds 
+// See https://github.com/KhronosGroup/GLTF/tree/master/extensions/2.0/Vendor/MSFT_texture_dds
 static const cgltf_image* ParseDdsImage(const cgltf_texture* texture, const cgltf_data* objects)
 {
     for (size_t i = 0; i < texture->extensions_count; i++)
@@ -567,7 +567,7 @@ static const cgltf_image* ParseDdsImage(const cgltf_texture* texture, const cglt
         {
             if (tokens[k].type != JSMN_STRING)
                 goto fail; // expecting a string key
-            
+
             if (cgltf_json_strcmp(tokens + k, (const uint8_t*)ext.data, "source") == 0)
             {
                 ++k;
@@ -962,7 +962,7 @@ bool utils::LoadScene(const std::string& path, Scene& scene, bool allowUpdate)
             for (uint32_t primIndex = 0; primIndex < node->mesh->primitives_count; ++primIndex)
             {
                 const cgltf_primitive& gltfSubmesh = node->mesh->primitives[primIndex];
-                
+
                 size_t materialIndex = gltfSubmesh.material - objects->materials;
                 size_t remappedMeshIndex = meshOffset + meshesPrimMap[meshIndex][primIndex];
 
@@ -979,7 +979,7 @@ bool utils::LoadScene(const std::string& path, Scene& scene, bool allowUpdate)
 
                 cBoxf aabb;
                 TransformAabb(worldTransform, m.aabb, aabb);
-                
+
                 scene.aabb.Add(aabb);
             }
         }
@@ -1004,7 +1004,7 @@ bool utils::LoadScene(const std::string& path, Scene& scene, bool allowUpdate)
             scene.animations.push_back(Animation());
             Animation& animation = scene.animations.back();
             animation.name = gltfAnim->name;
-            
+
             { // Setup scene graph
                 animation.sceneNodes.resize(objects->nodes_count);
                 for (uint32_t nodeIndex = 0; nodeIndex < objects->nodes_count; ++nodeIndex)
@@ -1044,9 +1044,8 @@ bool utils::LoadScene(const std::string& path, Scene& scene, bool allowUpdate)
                     rotation.SetupByQuaternion(sceneNode.rotation);
                     float4x4 scale;
                     scale.SetupByScale(sceneNode.scale);
-                    sceneNode.localTransform = translation * (rotation * scale);
 
-                    sceneNode.isLocalTransformDirty = false;
+                    sceneNode.localTransform = translation * (rotation * scale);
 
                     if (gltfNode->mesh)
                     {
@@ -1057,7 +1056,7 @@ bool utils::LoadScene(const std::string& path, Scene& scene, bool allowUpdate)
 
                 std::function<void(SceneNode*, SceneNode*)> setupGraphNodes = [&](SceneNode* parentNode, SceneNode* node)
                 {
-                    node->worldTransform = parentNode ? (parentNode->worldTransform * node->localTransform) : node->localTransform;
+                    node->worldTransform = parentNode ? (parentNode->worldTransform * node->localTransform) : (scene.mSceneToWorld * node->localTransform);
                     node->parent = parentNode;
 
                     for (auto child : node->children)
@@ -1236,7 +1235,7 @@ bool utils::LoadScene(const std::string& path, Scene& scene, bool allowUpdate)
         Material& material = scene.materials[materialOffset + i];
 
         const cgltf_material& gltfMaterial = objects->materials[i];
-            
+
         uint32_t* textureIndices = &material.baseColorTexIndex;
         cgltf_texture* maps[4] = {nullptr};
 
@@ -1364,6 +1363,26 @@ bool utils::LoadScene(const std::string& path, Scene& scene, bool allowUpdate)
         */
     }
 
+    // Set "Instance::allowUpdate" state
+    std::function<void(SceneNode*)> setAllowUpdate = [&](SceneNode* sceneNode)
+    {
+        for (auto instanceIndex : sceneNode->instances)
+        {
+            Instance& instance = scene.instances[instanceIndex];
+            instance.allowUpdate = true;
+        }
+
+        for (auto child : sceneNode->children)
+            setAllowUpdate(child);
+    };
+
+    for (Animation& animation : scene.animations)
+    {
+        for (auto node : animation.dynamicNodes)
+            setAllowUpdate(node);
+    }
+
+    // Cleanup
     cgltf_free(objects);
 
     return true;
@@ -1413,6 +1432,7 @@ void utils::Scene::Animate(float animationSpeed, float elapsedTime, float& anima
         float time = animTimeSec < keyFrom ? keyFrom : (animTimeSec > keyTo ? keyTo : animTimeSec);
         float factor = to != from ? (time - keyFrom) / (keyTo - keyFrom) : 0.0f;
         float3 value = float3(0.0f, 0.0f, 0.0f);
+
         switch (track.type)
         {
             case AnimationTrackType::Step:
@@ -1428,8 +1448,8 @@ void utils::Scene::Animate(float animationSpeed, float elapsedTime, float& anima
             }
             break;
         }
+
         track.node->translation = value;
-        track.node->isLocalTransformDirty = true;
     }
 
     for (auto& track : animation.rotationTracks)
@@ -1441,6 +1461,7 @@ void utils::Scene::Animate(float animationSpeed, float elapsedTime, float& anima
         float time = animTimeSec < keyFrom ? keyFrom : (animTimeSec > keyTo ? keyTo : animTimeSec);
         float factor = to != from ? (time - keyFrom) / (keyTo - keyFrom) : 0.0f;
         float4 value = float4(0.0f, 0.0f, 0.0f, 1.0f);
+
         switch (track.type)
         {
             case AnimationTrackType::Step:
@@ -1460,8 +1481,8 @@ void utils::Scene::Animate(float animationSpeed, float elapsedTime, float& anima
             }
             break;
         }
+
         track.node->rotation = value;
-        track.node->isLocalTransformDirty = true;
     }
 
     for (auto& track : animation.scaleTracks)
@@ -1473,6 +1494,7 @@ void utils::Scene::Animate(float animationSpeed, float elapsedTime, float& anima
         float time = animTimeSec < keyFrom ? keyFrom : (animTimeSec > keyTo ? keyTo : animTimeSec);
         float factor = to != from ? (time - keyFrom) / (keyTo - keyFrom) : 0.0f;
         float3 value = float3(1.0f, 1.0f, 1.0f);
+
         switch (track.type)
         {
             case AnimationTrackType::Step:
@@ -1484,25 +1506,21 @@ void utils::Scene::Animate(float animationSpeed, float elapsedTime, float& anima
                 value = Lerp(track.values[from], track.values[to], float3(factor));
                 break;
         }
+
         track.node->scale = value;
-        track.node->isLocalTransformDirty = true;
     }
 
     std::function<void(SceneNode*)> updateChain = [&](SceneNode* sceneNode)
     {
-        if (sceneNode->isLocalTransformDirty)
-        {
-            float4x4 translation;
-            translation.SetupByTranslation(sceneNode->translation);
-            float4x4 rotation;
-            rotation.SetupByQuaternion(sceneNode->rotation);
-            float4x4 scale;
-            scale.SetupByScale(sceneNode->scale);
-            sceneNode->localTransform = translation * (rotation * scale);
+        float4x4 translation;
+        translation.SetupByTranslation(sceneNode->translation);
+        float4x4 rotation;
+        rotation.SetupByQuaternion(sceneNode->rotation);
+        float4x4 scale;
+        scale.SetupByScale(sceneNode->scale);
 
-            sceneNode->isLocalTransformDirty = false;
-        }
-        sceneNode->worldTransform = sceneNode->parent ? (sceneNode->parent->worldTransform * sceneNode->localTransform) : (this->mSceneToWorld * sceneNode->localTransform);
+        sceneNode->localTransform = translation * (rotation * scale);
+        sceneNode->worldTransform = sceneNode->parent ? (sceneNode->parent->worldTransform * sceneNode->localTransform) : (mSceneToWorld * sceneNode->localTransform);
 
         float4x4 transform = sceneNode->worldTransform;
         double3 position = ToDouble(transform.GetCol3().To3d());

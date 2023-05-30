@@ -23,7 +23,7 @@ struct CameraDesc
     float farZ = 10000.0f;
     float orthoRange = 0.0f;
     float timeScale = 0.5f;
-    bool isProjectionReversed = false;
+    bool isReversedZ = false;
     bool isPositiveZ = true;
     bool isCustomMatrixSet = false;
     float4x4 customMatrix = float4x4::Identity();

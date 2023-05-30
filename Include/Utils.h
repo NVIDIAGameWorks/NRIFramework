@@ -190,7 +190,6 @@ namespace utils
         float4 rotation;
         float3 translation;
         float3 scale;
-        bool isLocalTransformDirty = true;
     };
 
     struct VectorAnimationTrack
