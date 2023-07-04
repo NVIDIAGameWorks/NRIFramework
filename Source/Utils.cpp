@@ -1003,7 +1003,7 @@ bool utils::LoadScene(const std::string& path, Scene& scene, bool allowUpdate)
 
             scene.animations.push_back(Animation());
             Animation& animation = scene.animations.back();
-            animation.name = gltfAnim->name;
+            animation.name = gltfAnim->name ? gltfAnim->name : "";
 
             { // Setup scene graph
                 animation.sceneNodes.resize(objects->nodes_count);
@@ -1050,7 +1050,7 @@ bool utils::LoadScene(const std::string& path, Scene& scene, bool allowUpdate)
                     if (gltfNode->mesh)
                     {
                         sceneNode.instances = nodeToInstanceMap[gltfNode];
-                        sceneNode.name = gltfNode->mesh->name; // TODO: gltfNode->name?
+                        sceneNode.name = gltfNode->mesh->name ? gltfNode->mesh->name : ""; // TODO: gltfNode->name?
                     }
                 }
 

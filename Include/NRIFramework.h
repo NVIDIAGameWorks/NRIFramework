@@ -11,8 +11,8 @@ license agreement from NVIDIA CORPORATION is strictly prohibited.
 #pragma once
 
 #define NRI_FRAMEWORK_VERSION_MAJOR 0
-#define NRI_FRAMEWORK_VERSION_MINOR 7
-#define NRI_FRAMEWORK_VERSION_DATE "23 May 2023"
+#define NRI_FRAMEWORK_VERSION_MINOR 8
+#define NRI_FRAMEWORK_VERSION_DATE "4 July 2023"
 #define NRI_FRAMEWORK 1
 
 // 3rd party
