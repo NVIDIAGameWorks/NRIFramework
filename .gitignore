@@ -43,11 +43,6 @@ compile_commands.json
 *.so.*
 *.manifest
 
-# external packages
-External/Detex/
-External/Glfw/
-External/ImGui/
-
 # generated folders
 _Build/
 _Compiler/

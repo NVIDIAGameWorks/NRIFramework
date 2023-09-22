@@ -13,3 +13,11 @@
 	url = https://github.com/NVIDIAGameWorks/ShaderMake.git
 	branch = main
 	update = merge
+[submodule "External/Glfw"]
+	path = External/Glfw
+	url = https://github.com/glfw/glfw.git
+	branch = master
+[submodule "External/Imgui"]
+	path = External/Imgui
+	url = https://github.com/ocornut/imgui.git
+	branch = master
