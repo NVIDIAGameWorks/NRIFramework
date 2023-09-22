@@ -27,6 +27,13 @@ void Camera::Initialize(const float3& position, const float3& lookAt, bool isRel
     m_IsRelative = isRelative;
 }
 
+void Camera::InitializeWithRotation(const float3& position, const float3& rotation, bool isRelative)
+{
+    state.globalPosition = ToDouble(position);
+    state.rotation = rotation;
+    m_IsRelative = isRelative;
+}
+
 void Camera::Update(const CameraDesc& desc, uint32_t frameIndex)
 {
     uint32_t projFlags = desc.isReversedZ ? PROJ_REVERSED_Z : 0;

@@ -225,12 +225,19 @@ bool SampleBase::CreateUserInterface(nri::Device& device, const nri::CoreInterfa
     ImGui::CreateContext();
     ImGui::StyleColorsDark();
 
-    float dpiScale = 1.0f + 0.75f * float(m_WindowResolution.x - m_OutputResolution.x) / float(m_OutputResolution.x);
+    float contentScale = 1.0f;
+    if (m_DpiMode != 0)
+    {
+        GLFWmonitor* monitor = glfwGetPrimaryMonitor();
+
+        float unused;
+        glfwGetMonitorContentScale(monitor, &contentScale, &unused);
+    }
 
     ImGuiStyle& style = ImGui::GetStyle();
     style.FrameBorderSize = 1;
     style.WindowBorderSize = 1;
-    style.ScaleAllSizes(dpiScale);
+    style.ScaleAllSizes(contentScale);
 
     ImGuiIO& io = ImGui::GetIO();
     io.BackendFlags |= ImGuiBackendFlags_HasMouseCursors; // We can honor GetMouseCursor() values (optional)
@@ -379,7 +386,7 @@ bool SampleBase::CreateUserInterface(nri::Device& device, const nri::CoreInterfa
     uint8_t* fontPixels = nullptr;
 
     ImFontConfig fontConfig = {};
-    fontConfig.SizePixels = 13.0f * dpiScale;
+    fontConfig.SizePixels = 13.0f * contentScale;
     io.Fonts->AddFontDefault(&fontConfig);
 
     io.Fonts->GetTexDataAsRGBA32(&fontPixels, &fontTextureWidth, &fontTextureHeight);
@@ -441,9 +448,9 @@ bool SampleBase::CreateUserInterface(nri::Device& device, const nri::CoreInterfa
     nri::SamplerDesc samplerDesc = {};
     samplerDesc.anisotropy = 1;
     samplerDesc.addressModes = {nri::AddressMode::REPEAT, nri::AddressMode::REPEAT};
-    samplerDesc.magnification = nri::Filter::LINEAR;
-    samplerDesc.minification = nri::Filter::LINEAR;
-    samplerDesc.mip = nri::Filter::LINEAR;
+    samplerDesc.magnification = contentScale > 1.25f ? nri::Filter::NEAREST : nri::Filter::LINEAR;
+    samplerDesc.minification = contentScale > 1.25f ? nri::Filter::NEAREST : nri::Filter::LINEAR;
+    samplerDesc.mip = contentScale > 1.25f ? nri::Filter::NEAREST : nri::Filter::LINEAR;
 
     if (NRI->CreateSampler(device, samplerDesc, m_Sampler) != nri::Result::SUCCESS)
         return false;
@@ -715,26 +722,30 @@ bool SampleBase::Create(int32_t argc, char** argv, const char* windowTitle)
     // Window size
     GLFWmonitor* monitor = glfwGetPrimaryMonitor();
 
-    float contentScaleX = 1.0f;
-    float contentScaleY = 1.0f;
-
-    if (!m_IgnoreDPI)
+    float contentScale = 1.0f;
+    if (m_DpiMode != 0)
     {
-        glfwGetMonitorContentScale(monitor, &contentScaleX, &contentScaleY);
-        printf("DPI scale %.1f%%\n", contentScaleX * 100.0f);
+        float unused;
+        glfwGetMonitorContentScale(monitor, &contentScale, &unused);
+        printf("DPI scale %.1f%% (%s)\n", contentScale * 100.0f, m_DpiMode == 2 ? "quality" : "performance");
     }
 
-    m_WindowResolution.x = (uint32_t)Floor(m_OutputResolution.x * contentScaleX);
-    m_WindowResolution.y = (uint32_t)Floor(m_OutputResolution.y * contentScaleY);
+    m_WindowResolution.x = (uint32_t)Floor(m_OutputResolution.x * contentScale);
+    m_WindowResolution.y = (uint32_t)Floor(m_OutputResolution.y * contentScale);
 
     const GLFWvidmode* vidmode = glfwGetVideoMode(monitor);
     const uint32_t screenW = (uint32_t)vidmode->width;
     const uint32_t screenH = (uint32_t)vidmode->height;
 
-    if (m_WindowResolution.x > screenW)
-        m_WindowResolution.x = screenW;
-    if (m_WindowResolution.y > screenH)
-        m_WindowResolution.y = screenH;
+    m_WindowResolution.x = Min(m_WindowResolution.x, screenW);
+    m_WindowResolution.y = Min(m_WindowResolution.y, screenH);
+
+    // Rendering output size
+    m_OutputResolution.x = Min(m_OutputResolution.x, m_WindowResolution.x);
+    m_OutputResolution.y = Min(m_OutputResolution.y, m_WindowResolution.y);
+
+    if (m_DpiMode == 2)
+        m_OutputResolution = m_WindowResolution;
 
     // Window creation
     bool decorated = m_WindowResolution.x != screenW && m_WindowResolution.y != screenH;
@@ -805,7 +816,7 @@ void SampleBase::RenderLoop()
             continue;
         }
 
-        if (glfwWindowShouldClose(m_Window))
+        if (glfwWindowShouldClose(m_Window) || this->AppShouldClose())
             break;
 
         PrepareFrame(i);
@@ -869,9 +880,9 @@ void SampleBase::InitCmdLineDefault(cmdline::parser& cmdLine)
     cmdLine.add<uint32_t>("height", 'h', "output resolution height", false, m_OutputResolution.y);
     cmdLine.add<uint32_t>("frameNum", 'f', "max frames to render", false, m_FrameNum);
     cmdLine.add<uint32_t>("vsyncInterval", 'v', "vsync interval", false, m_VsyncInterval);
+    cmdLine.add<uint32_t>("dpiMode", 0, "DPI mode", false, m_DpiMode);
     cmdLine.add("debugAPI", 0, "enable graphics API validation layer");
     cmdLine.add("debugNRI", 0, "enable NRI validation layer");
-    cmdLine.add("ignoreDPI", 0, "ignore DPI scaling");
 }
 
 void SampleBase::ReadCmdLineDefault(cmdline::parser& cmdLine)
@@ -883,7 +894,7 @@ void SampleBase::ReadCmdLineDefault(cmdline::parser& cmdLine)
     m_VsyncInterval = cmdLine.get<uint32_t>("vsyncInterval");
     m_DebugAPI = cmdLine.exist("debugAPI");
     m_DebugNRI = cmdLine.exist("debugNRI");
-    m_IgnoreDPI = cmdLine.exist("ignoreDPI");
+    m_DpiMode = cmdLine.get<uint32_t>("dpiMode");
 }
 
 void SampleBase::EnableMemoryLeakDetection([[maybe_unused]] uint32_t breakOnAllocationIndex)

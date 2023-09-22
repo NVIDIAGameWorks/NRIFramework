@@ -33,6 +33,8 @@ license agreement from NVIDIA CORPORATION is strictly prohibited.
 #define CGLTF_IMPLEMENTATION
 #include "cgltf.h"
 
+#include "Detex/stb_image.h"
+
 constexpr std::array<const char*, 13> gShaderExts =
 {
     "",
@@ -53,6 +55,108 @@ constexpr std::array<const char*, 13> gShaderExts =
 //========================================================================================================================
 // MISC
 //========================================================================================================================
+static void GenerateMorphTargetVertices(utils::Scene& scene, const utils::Mesh& mesh, uint32_t morphTargetIndex,
+    const uint8_t* positionSrc, size_t positionStride, const uint8_t* normalSrc, size_t normalStride)
+{
+    std::vector<float3> tangents(mesh.vertexNum, float3::Zero());
+    std::vector<float3> bitangents(mesh.vertexNum, float3::Zero());
+
+    for (size_t j = 0; j < mesh.indexNum; j += 3)
+    {
+        size_t primitiveBaseIndex = mesh.indexOffset + j;
+
+        size_t i0 = scene.indices[primitiveBaseIndex];
+        size_t i1 = scene.indices[primitiveBaseIndex + 1];
+        size_t i2 = scene.indices[primitiveBaseIndex + 2];
+
+        const utils::UnpackedVertex& v0 = scene.unpackedVertices[mesh.vertexOffset + i0];
+        const utils::UnpackedVertex& v1 = scene.unpackedVertices[mesh.vertexOffset + i1];
+        const utils::UnpackedVertex& v2 = scene.unpackedVertices[mesh.vertexOffset + i2];
+
+        // base verts
+        float3 pb0 = v0.position;
+        float3 pb1 = v1.position;
+        float3 pb2 = v2.position;
+
+        // src morph target data is delta
+        float3 p0 = float3((float *)(positionSrc + positionStride * i0)) + pb0;
+        float3 p1 = float3((float *)(positionSrc + positionStride * i1)) + pb1;
+        float3 p2 = float3((float *)(positionSrc + positionStride * i2)) + pb2;
+
+        float3 uvEdge20 = float3(v2.uv[0], v2.uv[1], 0.0f) - float3(v0.uv[0], v0.uv[1], 0.0f);
+        float3 uvEdge10 = float3(v1.uv[0], v1.uv[1], 0.0f) - float3(v0.uv[0], v0.uv[1], 0.0f);
+        
+        // base normals
+        float3 nb0 = v0.normal;
+        float3 nb1 = v1.normal;
+        float3 nb2 = v2.normal;
+        
+        // src morph target data is delta
+        float3 n0 = float3((float *)(normalSrc + normalStride * i0)) + nb0;
+        float3 n1 = float3((float *)(normalSrc + normalStride * i1)) + nb1;
+        float3 n2 = float3((float *)(normalSrc + normalStride * i2)) + nb2;
+
+        // Tangent
+        float r = uvEdge10.x * uvEdge20.y - uvEdge20.x * uvEdge10.y;
+
+        float3 tangent, bitangent;
+        if (Abs(r) < 1e-9f)
+        {
+            n1.z += 1e-6f;
+
+            tangent = GetPerpendicularVector(n1);
+            bitangent = Cross(n1, tangent);
+        }
+        else
+        {
+            float invr = 1.0f / r;
+
+            float3 a = (p1 - p0) * invr;
+            float3 b = (p2 - p0) * invr;
+
+            tangent = a * uvEdge20.y - b * uvEdge10.y;
+            bitangent = b * uvEdge10.x - a * uvEdge20.x;
+        }
+
+        tangents[i0] += tangent;
+        tangents[i1] += tangent;
+        tangents[i2] += tangent;
+
+        bitangents[i0] += bitangent;
+        bitangents[i1] += bitangent;
+        bitangents[i2] += bitangent;
+    }
+
+    uint32_t vertexOffset = mesh.morphTargetVertexOffset + morphTargetIndex * mesh.vertexNum;
+    for (size_t j = 0; j < mesh.vertexNum; j++)
+    {
+        const utils::UnpackedVertex& v = scene.unpackedVertices[mesh.vertexOffset + j];
+        float3 pb = v.position;
+        float3 nb = v.normal;
+
+        float3 P = float3((float*)(positionSrc + positionStride * j)) + pb;
+        float3 N = float3((float*)(normalSrc + normalStride * j)) + nb;
+        float3 T = tangents[j];
+        if (Length(T) < 1e-9f)
+            T = Cross(bitangents[j], N);
+        else // Gram-Schmidt orthogonalize
+            T -= N * Dot33(N, T);
+        T = Normalize(T);
+
+        // Calculate handedness
+        float handedness = Sign(Dot33(Cross(N, T), bitangents[j]));
+
+        // Output
+        float2 n = Packed::EncodeUnitVector( N, true );
+        float2 t = Packed::EncodeUnitVector( T, true );
+
+        utils::MorphVertex& morphVertex = scene.morphVertices[vertexOffset + j];
+        morphVertex.position[0] = Packed::sf2_to_h2(P.x, P.y);
+        morphVertex.position[1] = Packed::sf2_to_h2(P.z, handedness);
+        morphVertex.normal = Packed::sf2_to_h2(n.x, n.y);
+        morphVertex.tangent = Packed::sf2_to_h2(t.x, t.y);
+    }
+}
 
 static void GeneratePrimitiveDataAndTangents(utils::Scene& scene, const utils::Mesh& mesh)
 {
@@ -389,22 +493,12 @@ nri::ShaderDesc utils::LoadShader(nri::GraphicsAPI graphicsAPI, const std::strin
     return shaderDesc;
 }
 
-bool utils::LoadTexture(const std::string& path, Texture& texture, bool computeAvgColorAndAlphaMode)
+namespace utils
 {
-    printf("Loading texture '%s'...\n", GetFileName(path));
-
-    detexTexture** dTexture = nullptr;
-    int mipNum = 0;
-
-    if (!detexLoadTextureFileWithMipmaps(path.c_str(), 32, &dTexture, &mipNum))
-    {
-        printf("ERROR: Can't load texture '%s'\n", path.c_str());
-
-        return false;
-    }
-
+static void PostProcessTexture(const std::string &name, Texture& texture, bool computeAvgColorAndAlphaMode, detexTexture** dTexture, int mipNum)
+{
     texture.mips = (Mip*)dTexture;
-    texture.name = path;
+    texture.name = name;
     texture.format = GetFormatNRI(dTexture[0]->format);
     texture.width = (uint16_t)dTexture[0]->width;
     texture.height = (uint16_t)dTexture[0]->height;
@@ -444,8 +538,8 @@ bool utils::LoadTexture(const std::string& path, Texture& texture, bool computeA
 
         // Decompress last mip
         std::vector<uint8_t> image;
-        detexTexture *lastMip = dTexture[mipNum - 1];
-        uint8_t *rgba8 = lastMip->data;
+        detexTexture* lastMip = dTexture[mipNum - 1];
+        uint8_t* rgba8 = lastMip->data;
         if (lastMip->format != DETEX_PIXEL_FORMAT_RGBA8)
         {
             // Convert to RGBA8 if the texture is compressed
@@ -466,11 +560,58 @@ bool utils::LoadTexture(const std::string& path, Texture& texture, bool computeA
 
         if (texture.alphaMode == AlphaMode::TRANSPARENT && avgColor.w == 0.0f)
         {
-            printf("WARNING: Texture '%s' is fully transparent!\n", path.c_str());
+            printf("WARNING: Texture '%s' is fully transparent!\n", name.c_str());
             texture.alphaMode = AlphaMode::OFF;
         }
     }
+}
+}
 
+bool utils::LoadTextureFromMemory(const std::string& name, const uint8_t* data, int dataSize, 
+    Texture& texture, bool computeAvgColorAndAlphaMode)
+{
+    printf("Loading embedded texture '%s'...\n", name.c_str());
+
+    int x, y, comp;
+    unsigned char* image = stbi_load_from_memory((stbi_uc const*)data, dataSize, &x, &y, &comp, STBI_rgb_alpha);
+    if (!image)
+    {
+        printf("Could not read memory for embedded texture %s. Reason: %s", name.c_str(), stbi_failure_reason());
+        return false;
+    }
+    detexTexture** dTexture = (detexTexture**)malloc(sizeof(detexTexture*));
+    dTexture[0] = (detexTexture*)malloc(sizeof(detexTexture));
+    dTexture[0]->format = DETEX_PIXEL_FORMAT_RGBA8;
+    dTexture[0]->width = x;
+    dTexture[0]->height = y;
+    dTexture[0]->width_in_blocks = x;
+    dTexture[0]->height_in_blocks = y;
+    size_t size = x * y * detexGetPixelSize(DETEX_PIXEL_FORMAT_RGBA8);
+    dTexture[0]->data = (uint8_t*)malloc(size);
+    memcpy(dTexture[0]->data, image, size);
+    stbi_image_free(image);
+    
+    const int kMipNum = 1;
+    PostProcessTexture(name, texture, computeAvgColorAndAlphaMode, dTexture, kMipNum);
+    return true;
+}
+
+bool utils::LoadTexture(const std::string& path, Texture& texture, bool computeAvgColorAndAlphaMode)
+{
+    printf("Loading texture '%s'...\n", GetFileName(path));
+
+    detexTexture** dTexture = nullptr;
+    int mipNum = 0;
+
+    if (!detexLoadTextureFileWithMipmaps(path.c_str(), 32, &dTexture, &mipNum))
+    {
+        printf("ERROR: Can't load texture '%s'\n", path.c_str());
+
+        return false;
+    }
+
+    PostProcessTexture(path, texture, computeAvgColorAndAlphaMode, dTexture, mipNum);
+    
     return true;
 }
 
@@ -679,11 +820,12 @@ bool utils::LoadScene(const std::string& path, Scene& scene, bool allowUpdate)
     size_t materialOffset = scene.materials.size();
     scene.materials.resize(materialOffset + materialNum);
 
-    size_t meshOffset = scene.meshes.size();
+    uint32_t meshOffset = (uint32_t)scene.meshes.size();
     scene.meshes.resize(meshOffset + meshNum);
 
     size_t totalIndices = scene.indices.size();
     size_t totalVertices = scene.vertices.size();
+    size_t totalMorphMeshVertices = scene.morphVertices.size();
 
     for (size_t mesh_idx = 0; mesh_idx < objects->meshes_count; mesh_idx++)
     {
@@ -695,9 +837,24 @@ bool utils::LoadScene(const std::string& path, Scene& scene, bool allowUpdate)
             if (gltfSubmesh.type != cgltf_primitive_type_triangles || gltfSubmesh.attributes_count == 0)
                 continue;
 
-            size_t meshVertices = gltfSubmesh.attributes->data->count;
+            size_t meshVertices = 0;
+            
+            // search for position, first attribute may not be position and may have different size if malformed
+            for (size_t attr_idx = 0; attr_idx < gltfSubmesh.attributes_count; attr_idx++)
+            {
+                const cgltf_attribute& attr = gltfSubmesh.attributes[attr_idx];
+                if (attr.type == cgltf_attribute_type_position)
+                {
+                    meshVertices = attr.data->count;
+                    break;
+                }
+            }
+                    
+            if (meshVertices == 0)
+                continue;
+
             size_t meshIndices = gltfSubmesh.indices ? gltfSubmesh.indices->count : meshVertices;
-            size_t meshIndex = meshOffset + meshesPrimMap[mesh_idx][prim_idx];
+            uint32_t meshIndex = meshOffset + (uint32_t)meshesPrimMap[mesh_idx][prim_idx];
 
             Mesh& mesh = scene.meshes[meshIndex];
             mesh.indexOffset = (uint32_t)totalIndices;
@@ -707,6 +864,49 @@ bool utils::LoadScene(const std::string& path, Scene& scene, bool allowUpdate)
 
             totalIndices += mesh.indexNum;
             totalVertices += mesh.vertexNum;
+
+            bool hasMorphTargets = gltfSubmesh.targets_count > 0;
+            for (uint32_t target_idx = 0; target_idx < gltfSubmesh.targets_count; target_idx++)
+            {
+                const cgltf_morph_target &morphTarget = gltfSubmesh.targets[target_idx];
+                if (morphTarget.attributes_count == 0)
+                {
+                    hasMorphTargets = false;
+                    break;
+                }
+
+                bool hasPositions = false;
+                bool hasNormals = false;
+                for (uint32_t attr_idx = 0; attr_idx < morphTarget.attributes_count; attr_idx++)
+                {
+                    if (morphTarget.attributes[attr_idx].type == cgltf_attribute_type_position)
+                    {
+                        hasPositions = morphTarget.attributes[attr_idx].data->count == mesh.vertexNum;
+                    }
+                    else if (morphTarget.attributes[attr_idx].type == cgltf_attribute_type_normal)
+                    {
+                        hasNormals = morphTarget.attributes[attr_idx].data->count == mesh.vertexNum;
+                    }
+                }
+
+                if (!hasPositions || !hasNormals)
+                {
+                    hasMorphTargets = false;
+                    break;
+                }
+            }
+
+            if (hasMorphTargets)
+            {
+                mesh.morphMeshIndexOffset = scene.morphMeshTotalIndicesNum;
+                mesh.morphTargetVertexOffset = (uint32_t)totalMorphMeshVertices;
+                mesh.morphTargetNum = (uint32_t)gltfSubmesh.targets_count;
+
+                scene.morphMeshTotalIndicesNum += mesh.indexNum;
+                totalMorphMeshVertices += mesh.vertexNum * mesh.morphTargetNum;
+
+                scene.morphMeshes.push_back(meshIndex);
+            }
         }
     }
 
@@ -714,6 +914,7 @@ bool utils::LoadScene(const std::string& path, Scene& scene, bool allowUpdate)
     scene.primitives.resize(totalIndices / 3);
     scene.vertices.resize(totalVertices);
     scene.unpackedVertices.resize(totalVertices);
+    scene.morphVertices.resize(totalMorphMeshVertices);
 
     // Geometry
     for (size_t mesh_idx = 0; mesh_idx < objects->meshes_count; mesh_idx++)
@@ -905,6 +1106,39 @@ bool utils::LoadScene(const std::string& path, Scene& scene, bool allowUpdate)
                 }
             }
 
+            for (uint32_t target_idx = 0; target_idx < gltfSubmesh.targets_count; target_idx++)
+            {
+                const cgltf_morph_target& target = gltfSubmesh.targets[target_idx];
+                const cgltf_accessor* target_positions = nullptr;
+                const cgltf_accessor* target_normals = nullptr;
+
+                for (size_t attr_idx = 0; attr_idx < target.attributes_count; attr_idx++)
+                {
+                    const cgltf_attribute& attr = target.attributes[attr_idx];
+
+                    switch (attr.type)
+                    {
+                    case cgltf_attribute_type_position:
+                        assert(attr.data->type == cgltf_type_vec3);
+                        assert(attr.data->component_type == cgltf_component_type_r_32f);
+                        target_positions = attr.data;
+                        break;
+                    case cgltf_attribute_type_normal:
+                        assert(attr.data->type == cgltf_type_vec3);
+                        assert(attr.data->component_type == cgltf_component_type_r_32f);
+                        target_normals = attr.data;
+                        break;
+                    }
+                }
+
+                assert(target_positions && target_normals);
+
+                auto [positionSrc, positionStride] = cgltfBufferIterator(target_positions, sizeof(float) * 3);
+                auto [normalSrc, normalStride] = cgltfBufferIterator(target_normals, sizeof(float) * 3);
+                
+                GenerateMorphTargetVertices(scene, mesh, target_idx, positionSrc, positionStride, normalSrc, normalStride);
+            }
+
             // Per primitive data and tangents
             GeneratePrimitiveDataAndTangents(scene, mesh);
         }
@@ -914,7 +1148,48 @@ bool utils::LoadScene(const std::string& path, Scene& scene, bool allowUpdate)
     const uint32_t instanceOffset = (uint32_t)scene.instances.size();
     scene.instances.reserve(instanceOffset + objects->nodes_count);
 
+    size_t currentSceneMeshCount = scene.meshes.size() - meshOffset;
+    std::vector<uint32_t> sharedMeshInstanceIndices(currentSceneMeshCount, InvalidIndex);
+
     std::map<cgltf_node*, std::vector<uint32_t>> nodeToInstanceMap;
+
+    auto AddMeshInstance = [&scene, &sharedMeshInstanceIndices, meshOffset](uint32_t meshIndex)
+    {
+        Mesh& mesh = scene.meshes[meshIndex];
+
+        uint32_t currentSceneMeshIndex = meshIndex - meshOffset;
+        uint32_t meshInstanceIndex = (uint32_t)scene.meshInstances.size();
+        if (!mesh.HasMorphTargets())
+        {
+            // check if we already made a sharable mesh instance for this mesh
+            if (sharedMeshInstanceIndices[currentSceneMeshIndex] != InvalidIndex)
+                return sharedMeshInstanceIndices[currentSceneMeshIndex];
+
+            // Update cache for new mesh Instance Index
+            sharedMeshInstanceIndices[currentSceneMeshIndex] = meshInstanceIndex;
+        }
+        
+        scene.meshInstances.push_back({});
+
+        MeshInstance& meshInstance = scene.meshInstances.back();
+        meshInstance.meshIndex = meshIndex;
+        meshInstance.primitiveOffset = scene.totalInstancedPrimitivesNum;
+        meshInstance.blasIndex = InvalidIndex;
+
+        uint32_t numPrimitives = mesh.indexNum / 3;
+        if (mesh.HasMorphTargets())
+        {
+            meshInstance.morphedVertexOffset = scene.morphedVerticesNum;
+            scene.morphedVerticesNum += mesh.vertexNum;
+
+            meshInstance.morphedPrimitiveOffset = scene.morphedPrimitivesNum;
+            scene.morphedPrimitivesNum += numPrimitives;
+        }
+
+        scene.totalInstancedPrimitivesNum += numPrimitives;
+
+        return meshInstanceIndex;
+    };
 
     std::function<void(cgltf_node*, float4x4)> traverseNode = [&](cgltf_node* node, const float4x4& parentTransform)
     {
@@ -963,19 +1238,19 @@ bool utils::LoadScene(const std::string& path, Scene& scene, bool allowUpdate)
             {
                 const cgltf_primitive& gltfSubmesh = node->mesh->primitives[primIndex];
 
-                size_t materialIndex = gltfSubmesh.material - objects->materials;
+                size_t materialIndex = gltfSubmesh.material ? (gltfSubmesh.material - objects->materials) : 0;
                 size_t remappedMeshIndex = meshOffset + meshesPrimMap[meshIndex][primIndex];
 
                 Instance& instance = scene.instances.emplace_back();
-                instance.meshIndex = (uint32_t)remappedMeshIndex;
+                Mesh& m = scene.meshes[remappedMeshIndex];
+
+                instance.meshInstanceIndex = AddMeshInstance((uint32_t)remappedMeshIndex);
                 instance.position = position;
                 instance.rotation = transform;
                 instance.materialIndex = (uint32_t)(materialOffset + materialIndex);
-                instance.allowUpdate = allowUpdate;
+                instance.allowUpdate = allowUpdate || m.HasMorphTargets();
 
                 vec.push_back((uint32_t)(scene.instances.size() - 1));
-
-                Mesh& m = scene.meshes[remappedMeshIndex];
 
                 cBoxf aabb;
                 TransformAabb(worldTransform, m.aabb, aabb);
@@ -1166,6 +1441,64 @@ bool utils::LoadScene(const std::string& path, Scene& scene, bool allowUpdate)
                         track.frameCount = frameCount;
                     }
                     break;
+
+                    case cgltf_animation_path_type_weights:
+                    {
+                        uint32_t weightTrackIndex = (uint32_t)animation.weightTracks.size();
+                        bool hasMeshInstance = false;
+                        for (auto instanceIndex : sceneNode->instances)
+                        {
+                            Instance& instance = scene.instances[instanceIndex];
+                            MeshInstance& meshInstance = scene.meshInstances[instance.meshInstanceIndex];
+                            Mesh& mesh = scene.meshes[meshInstance.meshIndex];
+                            if (mesh.HasMorphTargets())
+                            {
+                                // only take the first animation track 
+                                if (std::find_if(animation.morphMeshInstances.begin(), animation.morphMeshInstances.end(), 
+                                    [&instance](auto &x) { return x.meshInstanceIndex == instance.meshInstanceIndex; }) ==
+                                    animation.morphMeshInstances.end())
+                                {
+                                    animation.morphMeshInstances.push_back({ weightTrackIndex, instance.meshInstanceIndex });
+                                    hasMeshInstance = true;
+                                }
+                            }
+                        }
+
+                        if (hasMeshInstance)
+                        {
+                            animation.weightTracks.push_back(WeightsAnimationTrack());
+                            WeightsAnimationTrack& track = animation.weightTracks.back();
+                            uint32_t frameCount = (uint32_t)animChannel->sampler->input->count;
+                            uint32_t outputCount = (uint32_t)animChannel->sampler->output->count;
+
+                            track.type = convertTrackType(animChannel->sampler->interpolation);
+                            auto [keysSrc, keysStride] = cgltfBufferIterator(animChannel->sampler->input, sizeof(float));
+                            auto [valuesSrc, valuesStride] = cgltfBufferIterator(animChannel->sampler->output, sizeof(float));
+                            track.keys.reserve(frameCount);
+                            track.values.reserve(frameCount);
+                            uint32_t numTargetsPerFrame = outputCount / frameCount;
+                            track.frameCount = frameCount;
+
+                            for (uint32_t frameIndex = 0; frameIndex < frameCount; ++frameIndex)
+                            {
+                                float key = *(float*)keysSrc;
+                                keysSrc += keysStride;
+                                track.keys.push_back(key);
+                                track.values.push_back({});
+                                auto& perFrameValues = track.values.back();
+                                for (uint32_t targetIndex = 0; targetIndex < numTargetsPerFrame; targetIndex++)
+                                {
+                                    float weight = *(float*)valuesSrc;
+                                    if (weight > 0.f)
+                                    {
+                                        perFrameValues.push_back(MorphTargetIndexWeight(targetIndex, weight));
+                                    }
+                                    valuesSrc += valuesStride;
+                                }
+                            }
+                        }
+                    }
+                    break;
                 }
             }
         }
@@ -1294,36 +1627,46 @@ bool utils::LoadScene(const std::string& path, Scene& scene, bool allowUpdate)
             auto it = textures.find(activeImage);
             if (it == textures.end())
             {
-                assert(!activeImage->buffer_view);
+                Texture* tex = new Texture;
 
-                if (!activeImage->buffer_view)
+                const bool computeAlphaMode = j == 0;
+                const bool makeSRGB = j != 2;
+
+                bool isLoaded = false;
+                if (activeImage->buffer_view)
                 {
-                    Texture* tex = new Texture;
+                    assert(activeImage->buffer_view->size < std::numeric_limits<int>::max());
 
-                    const bool computeAlphaMode = j == 0;
-                    const bool makeSRGB = j != 2;
-
+                    const uint8_t* data = ((const uint8_t*)activeImage->buffer_view->buffer->data) + activeImage->buffer_view->offset;
+                    isLoaded = LoadTextureFromMemory(std::string(activeImage->name), data,
+                        (int)activeImage->buffer_view->size, *tex, computeAlphaMode);
+                }
+                else
+                {
                     std::string filename = (normPath.parent_path() / activeImage->uri).string();
-                    bool isLoaded = LoadTexture(filename, *tex, computeAlphaMode);
+                    isLoaded = LoadTexture(filename, *tex, computeAlphaMode);
                     if (!isLoaded)
                     {
                         std::string filenameDDS = filename.substr(0, filename.find_last_of('.')) + ".dds";
                         isLoaded = LoadTexture(filenameDDS, *tex, computeAlphaMode);
-                    }
-
-                    if (isLoaded)
-                    {
-                        if (makeSRGB)
-                            tex->OverrideFormat(MakeSRGBFormat(tex->format));
-
-                        textureIndex = (uint32_t)scene.textures.size();
-                        scene.textures.push_back(tex);
-
-                        textures[activeImage] = textureIndex;
-                    }
-                    else
-                        delete tex;
+                    }   
                 }
+
+                if (isLoaded)
+                {
+                    if (makeSRGB)
+                        tex->OverrideFormat(MakeSRGBFormat(tex->format));
+
+                    textureIndex = (uint32_t)scene.textures.size();
+                    scene.textures.push_back(tex);
+
+                    textures[activeImage] = textureIndex;
+                }
+                else
+                    delete tex;
+                
+                
+               
             }
             else
                 textureIndex = it->second;
@@ -1342,7 +1685,8 @@ bool utils::LoadScene(const std::string& path, Scene& scene, bool allowUpdate)
 
         const Texture* diffuseTexture = scene.textures[material.baseColorTexIndex];
         material.alphaMode = useTransmission ? AlphaMode::TRANSPARENT : diffuseTexture->alphaMode;
-
+        material.isHair = strstr(gltfMaterial.name, "hair") != 0;
+        
         // TODO: remove strange polygon on the window in Kitchen scene
         if (strstr(gltfMaterial.name, "Material_295"))
             material.alphaMode = AlphaMode::OFF;
@@ -1422,6 +1766,96 @@ void utils::Scene::Animate(float animationSpeed, float elapsedTime, float& anima
 
         return (uint32_t)0;
     };
+
+    for (auto& track : animation.weightTracks)
+    {
+        track.activeValues.clear();
+
+        uint32_t from = findKeyIndex(track.keys, animTimeSec);
+        uint32_t to = Min(track.frameCount - 1, from + 1);
+        float keyFrom = track.keys[from];
+        float keyTo = track.keys[to];
+        float time = animTimeSec < keyFrom ? keyFrom : (animTimeSec > keyTo ? keyTo : animTimeSec);
+        float factor = to != from ? (time - keyFrom) / (keyTo - keyFrom) : 0.0f;
+       
+        switch (track.type)
+        {
+            case AnimationTrackType::Step:
+            {
+                track.activeValues = track.values[from];
+            }
+            break;
+
+            case AnimationTrackType::CubicSpline: //TODO implement CubicSpline
+            case AnimationTrackType::Linear:
+            {
+                const auto& morphsFrom = track.values[from];
+                const auto& morphsTo = track.values[to];
+
+                // morphsFrom and morphsTo are pre-sorted by morph target id
+                // do a merge operation to interpolate shared target ids
+                // if a target id doesn't exist in a key, it means it's weight is 0
+                uint32_t fromIndex = 0;
+                uint32_t toIndex = 0;
+
+                float totalWeight = 0.f;
+                while (fromIndex < morphsFrom.size() || toIndex < morphsTo.size())
+                {
+                    float fromWeight = 0.f;
+                    float toWeight = 0.f;
+                    uint32_t fromTargetId = ~0x0u;
+                    uint32_t toTargetId = ~0x0u;
+
+                    if (fromIndex < morphsFrom.size())
+                    {
+                        fromTargetId = morphsFrom[fromIndex].first;
+                        fromWeight = morphsFrom[fromIndex].second;
+                    }
+                    if (toIndex < morphsTo.size())
+                    {
+                        toTargetId = morphsTo[toIndex].first;
+                        toWeight = morphsTo[toIndex].second;
+                    }
+
+                    if (fromTargetId < toTargetId)
+                    {
+                        float interpWeight = Lerp(fromWeight, 0.f, factor);
+                        totalWeight += interpWeight;
+                        track.activeValues.emplace_back(fromTargetId, interpWeight);
+                        fromIndex++;
+                    }
+                    else if (toTargetId < fromTargetId)
+                    {
+                        float interpWeight = Lerp(0.f, toWeight, factor);
+                        totalWeight += interpWeight;
+                        track.activeValues.emplace_back(toTargetId, interpWeight);
+
+                        toIndex++;
+                    }
+                    else //if (fromTargetId == toTargetId)
+                    {
+                        float interpWeight = Lerp(fromWeight, toWeight, factor);
+                        totalWeight += interpWeight;
+                        track.activeValues.emplace_back(fromTargetId, interpWeight);
+                        fromIndex++;
+                        toIndex++;
+                    }
+                }
+                // sort by weight descending
+                std::sort(track.activeValues.begin(), track.activeValues.end(), [](auto& elemA, auto& elemB) { return elemA.second >= elemB.second; });
+
+                if (totalWeight != 1.0f)
+                {
+                    // renormalize
+                    float totalWeightRcp = 1.0f / totalWeight;
+                    for (auto& activeMorphValue : track.activeValues) {
+                        activeMorphValue.second *= totalWeightRcp;
+                    }
+                }
+            }
+            break;
+        }
+    }
 
     for (auto& track : animation.positionTracks)
     {

@@ -11,8 +11,8 @@ license agreement from NVIDIA CORPORATION is strictly prohibited.
 #pragma once
 
 #define NRI_FRAMEWORK_VERSION_MAJOR 0
-#define NRI_FRAMEWORK_VERSION_MINOR 8
-#define NRI_FRAMEWORK_VERSION_DATE "4 July 2023"
+#define NRI_FRAMEWORK_VERSION_MINOR 9
+#define NRI_FRAMEWORK_VERSION_DATE "1 September 2023"
 #define NRI_FRAMEWORK 1
 
 // 3rd party
@@ -98,6 +98,7 @@ public:
     virtual bool Initialize(nri::GraphicsAPI graphicsAPI) = 0;
     virtual void PrepareFrame(uint32_t frameIndex) = 0;
     virtual void RenderFrame(uint32_t frameIndex) = 0;
+    virtual bool AppShouldClose() { return false; }
 
     static void EnableMemoryLeakDetection(uint32_t breakOnAllocationIndex);
 
@@ -107,12 +108,12 @@ protected:
     sFastRand m_FastRandState = {};
     Camera m_Camera;
     Timer m_Timer;
-    uint2 m_OutputResolution = {1280, 720};
+    uint2 m_OutputResolution = {1920, 1080};
     uint32_t m_VsyncInterval = 0;
+    uint32_t m_DpiMode = 0;
     float m_MouseSensitivity = 1.0f;
     bool m_DebugAPI = false;
     bool m_DebugNRI = false;
-    bool m_IgnoreDPI = false;
     bool m_IsActive = true;
 
     // Private

@@ -67,6 +67,7 @@ namespace utils
     nri::ShaderDesc LoadShader(nri::GraphicsAPI graphicsAPI, const std::string& path, ShaderCodeStorage& storage, const char* entryPointName = nullptr);
     bool LoadTexture(const std::string& path, Texture& texture, bool computeAvgColorAndAlphaMode = false);
     void LoadTextureFromMemory(nri::Format format, uint32_t width, uint32_t height, const uint8_t *pixels, Texture &texture);
+    bool LoadTextureFromMemory(const std::string& name, const uint8_t* data, int dataSize, Texture& texture, bool computeAvgColorAndAlphaMode);
     bool LoadScene(const std::string& path, Scene& scene, bool allowUpdate);
 
     struct Texture
@@ -118,6 +119,7 @@ namespace utils
         uint32_t normalTexIndex = StaticTexture::FlatNormal;
         uint32_t emissiveTexIndex = StaticTexture::Black;
         AlphaMode alphaMode = AlphaMode::OPAQUE;
+        bool isHair;
 
         inline bool IsOpaque() const
         { return alphaMode == AlphaMode::OPAQUE; }
@@ -133,6 +135,9 @@ namespace utils
 
         inline bool IsEmissive() const
         { return emissiveTexIndex != StaticTexture::Black && (emissiveAndRoughnessScale.x != 0.0f || emissiveAndRoughnessScale.y != 0.0f || emissiveAndRoughnessScale.z != 0.0f); }
+
+        inline bool IsHair() const
+        { return isHair; }
     };
 
     struct Instance
@@ -142,11 +147,12 @@ namespace utils
         double3 position = double3::Zero();
         double3 positionPrev = double3::Zero();
         float3 scale = float3(1.0f); // TODO: needed to generate hulls representing inner glass surfaces
-        uint32_t meshIndex = InvalidIndex;
+        uint32_t meshInstanceIndex = InvalidIndex;
         uint32_t materialIndex = InvalidIndex;
         bool allowUpdate = false; // if "false" will be merged into the monolithic BLAS together with other static geometry
     };
 
+    // static mesh data shared across mesh instances
     struct Mesh
     {
         cBoxf aabb; // must be manually adjusted by instance.rotation.GetScale()
@@ -154,6 +160,22 @@ namespace utils
         uint32_t indexOffset = 0;
         uint32_t indexNum = 0;
         uint32_t vertexNum = 0;
+
+        uint32_t morphMeshIndexOffset = InvalidIndex;
+        uint32_t morphTargetVertexOffset = InvalidIndex;
+        uint32_t morphTargetNum = 0;
+
+        inline bool HasMorphTargets() const
+        { return morphTargetNum != 0; }
+    };
+
+    // per mesh instance data
+    struct MeshInstance
+    {
+        uint32_t meshIndex = 0;
+        uint32_t primitiveOffset = 0;
+        uint32_t morphedVertexOffset = InvalidIndex;
+        uint32_t morphedPrimitiveOffset = InvalidIndex;
         uint32_t blasIndex = InvalidIndex; // BLAS index for dynamic geometry in a user controlled array
     };
 
@@ -161,6 +183,13 @@ namespace utils
     {
         float position[3];
         uint32_t uv; // half float
+        uint32_t normal; // 10 10 10 2 unorm
+        uint32_t tangent; // 10 10 10 2 unorm (.w - handedness)
+    };
+
+    struct MorphVertex
+    {
+        uint32_t position[2];
         uint32_t normal; // 10 10 10 2 unorm
         uint32_t tangent; // 10 10 10 2 unorm (.w - handedness)
     };
@@ -210,6 +239,24 @@ namespace utils
         AnimationTrackType type = AnimationTrackType::Linear;
     };
 
+    typedef std::pair<uint32_t, float> MorphTargetIndexWeight;
+
+    struct WeightsAnimationTrack
+    {
+        std::vector<float> keys;
+        std::vector<std::vector<MorphTargetIndexWeight>> values;
+        std::vector<MorphTargetIndexWeight> activeValues;
+        
+        uint32_t frameCount = 0;
+        AnimationTrackType type = AnimationTrackType::Linear;
+    };
+
+    struct WeightTrackMorphMeshIndex
+    {
+        uint32_t weightTrackIndex = InvalidIndex;
+        uint32_t meshInstanceIndex = InvalidIndex;
+    };
+
     struct Animation
     {
         std::vector<SceneNode> sceneNodes;
@@ -217,6 +264,8 @@ namespace utils
         std::vector<VectorAnimationTrack> positionTracks;
         std::vector<QuatAnimationTrack> rotationTracks;
         std::vector<VectorAnimationTrack> scaleTracks;
+        std::vector<WeightsAnimationTrack> weightTracks;
+	std::vector<WeightTrackMorphMeshIndex> morphMeshInstances;
         std::string name;
         float durationMs = 0.0f;
         float animationProgress = 0.0f;
@@ -235,14 +284,22 @@ namespace utils
         std::vector<UnpackedVertex> unpackedVertices;
         std::vector<Index> indices;
         std::vector<Primitive> primitives;
-
+        std::vector<MorphVertex> morphVertices;
+        
         // Other resources
         std::vector<Material> materials;
         std::vector<Instance> instances;
         std::vector<Mesh> meshes;
+        std::vector<MeshInstance> meshInstances;
         std::vector<Animation> animations;
+        std::vector<uint32_t> morphMeshes;
         float4x4 mSceneToWorld = float4x4::Identity();
         cBoxf aabb;
+
+        uint32_t totalInstancedPrimitivesNum = 0;
+        uint32_t morphMeshTotalIndicesNum = 0;
+        uint32_t morphedVerticesNum = 0;
+        uint32_t morphedPrimitivesNum = 0;
 
         void Animate(float animationSpeed, float elapsedTime, float& animationProgress, uint32_t animationIndex);
 
@@ -268,6 +325,9 @@ namespace utils
 
             primitives.resize(0);
             primitives.shrink_to_fit();
+
+            morphVertices.resize(0);
+            morphVertices.shrink_to_fit();
         }
     };
 }

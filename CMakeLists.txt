@@ -25,66 +25,6 @@ set (VERSION_MINOR ${CMAKE_MATCH_1})
 message ("NRIFramework v${VERSION_MAJOR}.${VERSION_MINOR}")
 project (NRIFramework LANGUAGES C CXX)
 
-# Download dependencies using Packman
-if (WIN32)
-    set (PACKMAN_EXT ".cmd")
-else ()
-    set (PACKMAN_EXT ".sh")
-endif ()
-
-if ((CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64") OR(CMAKE_SYSTEM_PROCESSOR MATCHES "AMD64"))
-    if (WIN32)
-        set (PACKMAN_PLATFORM "windows-x86_64")
-    else ()
-        set (PACKMAN_PLATFORM "linux-x86_64")
-    endif ()
-elseif ((CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64") OR(CMAKE_SYSTEM_PROCESSOR MATCHES "arm64"))
-    set (PACKMAN_PLATFORM "linux-aarch64")
-else ()
-    message (FATAL_ERROR "Unsupported architecture: '${CMAKE_SYSTEM_PROCESSOR}'")
-endif ()
-
-message ("Packman platform: ${PACKMAN_PLATFORM}")
-
-execute_process (COMMAND "${CMAKE_CURRENT_SOURCE_DIR}/External/Packman/packman${PACKMAN_EXT}" pull "${CMAKE_CURRENT_SOURCE_DIR}/Dependencies.xml" -p ${PACKMAN_PLATFORM} -t nri_data_version=${NRI_DATA_VERSION}
-    WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
-    RESULT_VARIABLE PACKMAN_RESULT)
-
-if (NOT "${PACKMAN_RESULT}" STREQUAL "0")
-    message (FATAL_ERROR "Packman failed(code = ${PACKMAN_RESULT})")
-endif ()
-
-# Setup dependencies
-if (CMAKE_SIZEOF_VOID_P EQUAL 8)
-    set (BIN_ARCHITECTURE "x86_64")
-else ()
-    set (BIN_ARCHITECTURE "x86")
-endif ()
-
-if (WIN32)
-    find_library (GLFW_RELEASE_LIB NAMES glfw3 PATHS "External/Glfw/build-${BIN_ARCHITECTURE}/Release/src" REQUIRED)
-    find_library (GLFW_DEBUG_LIB NAMES glfw3 PATHS "External/Glfw/build-${BIN_ARCHITECTURE}/Debug/src" REQUIRED)
-else ()
-    find_library (GLFW_RELEASE_LIB NAMES glfw3 PATHS "External/Glfw/build/Release/src" REQUIRED)
-    find_library (GLFW_DEBUG_LIB NAMES glfw3 PATHS "External/Glfw/build/Debug/src" REQUIRED)
-
-    if (UNIX)
-        find_path (XLIB_HEADERS NAMES "X11/Xlib.h")
-
-        if (NOT XLIB_HEADERS)
-            message (FATAL_ERROR "Can't find 'X11/xlib.h'.(libx11-dev is not installed?)")
-        endif ()
-
-        find_path (XRANDR_HEADERS NAMES "X11/extensions/Xrandr.h")
-
-        if (NOT XRANDR_HEADERS)
-            message (FATAL_ERROR "Can't find 'X11/extensions/Xrandr.h'.(libxrandr-dev is not installed?)")
-        endif ()
-    endif ()
-endif ()
-
-set (GLFW_LIB optimized ${GLFW_RELEASE_LIB} debug ${GLFW_DEBUG_LIB})
-
 # Globals?
 set_property (GLOBAL PROPERTY USE_FOLDERS ON)
 
@@ -113,19 +53,19 @@ else ()
     set (COMPILE_DEFINITIONS GLFW_EXPOSE_NATIVE_X11 GLFW_INCLUDE_NONE)
 endif ()
 
-# External/ImGui
-file (GLOB IMGUI_SOURCE "External/ImGui/*.cpp" "External/ImGui/*.h")
+# External/Imgui
+file (GLOB IMGUI_SOURCE "External/Imgui/*.cpp" "External/Imgui/*.h")
 source_group ("" FILES ${IMGUI_SOURCE})
-add_library (ImGui STATIC ${IMGUI_SOURCE})
-target_compile_definitions (ImGui PRIVATE ${COMPILE_DEFINITIONS})
-set_property (TARGET ImGui PROPERTY FOLDER "${PROJECT_NAME}/External")
+add_library (imgui STATIC ${IMGUI_SOURCE})
+target_compile_definitions (imgui PRIVATE ${COMPILE_DEFINITIONS})
+set_property (TARGET imgui PROPERTY FOLDER "${PROJECT_NAME}/External")
 
 # External/Detex
 file (GLOB DETEX_SOURCE "External/Detex/*.c" "External/Detex/*.h")
 source_group ("" FILES ${DETEX_SOURCE})
-add_library (Detex STATIC ${DETEX_SOURCE})
-target_compile_definitions (Detex PRIVATE ${COMPILE_DEFINITIONS})
-set_property (TARGET Detex PROPERTY FOLDER "${PROJECT_NAME}/External")
+add_library (detex STATIC ${DETEX_SOURCE})
+target_compile_definitions (detex PRIVATE ${COMPILE_DEFINITIONS})
+set_property (TARGET detex PROPERTY FOLDER "${PROJECT_NAME}/External")
 
 # External/MathLib
 file (READ "${CMAKE_CURRENT_SOURCE_DIR}/External/MathLib/MathLib.h" ver_h)
@@ -141,13 +81,23 @@ source_group ("MathLib" FILES ${MATHLIB_HEADERS})
 # External/NRI
 add_subdirectory ("External/NRI")
 
+# External/Glfw
+if (NOT TARGET glfw)
+    option(GLFW_BUILD_EXAMPLES "" OFF)
+    option(GLFW_BUILD_TESTS "" OFF)
+    option(GLFW_BUILD_DOCS "" OFF)
+    option(GLFW_INSTALL "" OFF)
+    add_subdirectory("External/Glfw")
+    set_property (TARGET glfw PROPERTY FOLDER "${PROJECT_NAME}/External")
+endif ()
+
 # NRIFramework
 file (GLOB FRAMEWORK_SOURCE "Source/*.cpp" "Source/*.h")
 source_group ("Source" FILES ${FRAMEWORK_SOURCE})
 file (GLOB FRAMEWORK_HEADERS "Include/*.hpp" "Include/*.h")
 source_group ("Include" FILES ${FRAMEWORK_HEADERS})
 add_library (${PROJECT_NAME} STATIC ${FRAMEWORK_SOURCE} ${FRAMEWORK_HEADERS} ${MATHLIB_HEADERS})
-target_link_libraries (${PROJECT_NAME} PRIVATE ImGui Detex ${GLFW_LIB})
+target_link_libraries (${PROJECT_NAME} PRIVATE imgui detex glfw)
 
 if (UNIX)
     target_link_libraries (${PROJECT_NAME} PRIVATE ${CMAKE_DL_LIBS} pthread X11)

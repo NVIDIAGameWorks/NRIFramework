@@ -49,6 +49,7 @@ class Camera
 public:
     void Update(const CameraDesc& desc, uint32_t frameIndex);
     void Initialize(const float3& position, const float3& lookAt, bool isRelative = false);
+    void InitializeWithRotation(const float3& position, const float3& rotationDegrees, bool isRelative);
 
     inline void SavePreviousState()
     {
