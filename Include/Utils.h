@@ -190,8 +190,8 @@ namespace utils
     struct MorphVertex
     {
         uint32_t position[2];
-        uint32_t normal; // 10 10 10 2 unorm
-        uint32_t tangent; // 10 10 10 2 unorm (.w - handedness)
+        uint32_t normal;
+        uint32_t tangent;
     };
 
     struct UnpackedVertex
