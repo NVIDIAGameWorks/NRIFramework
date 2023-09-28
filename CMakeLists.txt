@@ -125,33 +125,19 @@ message ("NRI framework shaders output path: '${NRIF_SHADERS_PATH}'")
 file (GLOB_RECURSE SHADERS "Shaders/*.hlsl")
 set_source_files_properties (${SHADERS} PROPERTIES VS_TOOL_OVERRIDE "None")
 
+set (SHADERMAKE_GENERAL_ARGS
+    --useAPI --binary --flatten --stripReflection --WX
+            --sourceDir "Shaders"
+            -c Shaders.cfg
+            -o "${NRIF_SHADERS_PATH}"
+            -I "Shaders"
+)
+
 if (WIN32)
     add_custom_target (${PROJECT_NAME}_Shaders ALL
-        COMMAND ShaderMake --useAPI
-            --binary --flatten --stripReflection --compiler "${DXC_PATH}"
-            --sourceDir "Shaders"
-            -p DXIL --WX
-            -c Shaders.cfg
-            -o "${NRIF_SHADERS_PATH}"
-            -I "Shaders"
-            -D COMPILER_DXC
-        COMMAND ShaderMake --useAPI
-            --binary --flatten --stripReflection --compiler "${DXC_SPIRV_PATH}"
-            --sourceDir "Shaders"
-            -p SPIRV --WX
-            -c Shaders.cfg
-            -o "${NRIF_SHADERS_PATH}"
-            -I "Shaders"
-            -D COMPILER_DXC
-            -D VULKAN
-        COMMAND ShaderMake --useAPI
-            --binary --flatten --stripReflection --compiler "${FXC_PATH}"
-            --sourceDir "Shaders"
-            -p DXBC --WX
-            -c Shaders.cfg
-            -o "${NRIF_SHADERS_PATH}"
-            -I "Shaders"
-            -D COMPILER_FXC
+        COMMAND ShaderMake ${SHADERMAKE_GENERAL_ARGS} -p DXBC -D COMPILER_FXC --compiler "${FXC_PATH}"
+        COMMAND ShaderMake ${SHADERMAKE_GENERAL_ARGS} -p DXIL -D COMPILER_DXC --compiler "${DXC_PATH}"
+        COMMAND ShaderMake ${SHADERMAKE_GENERAL_ARGS} -p SPIRV -D COMPILER_DXC -D VULKAN --compiler "${DXC_SPIRV_PATH}"
         DEPENDS ShaderMake
         WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
         VERBATIM
@@ -159,15 +145,7 @@ if (WIN32)
     )
 else ()
     add_custom_target (${PROJECT_NAME}_Shaders ALL
-        COMMAND ShaderMake
-            --binary --flatten --stripReflection --compiler "${DXC_SPIRV_PATH}"
-            --sourceDir "Shaders"
-            -p SPIRV --WX
-            -c Shaders.cfg
-            -o "${NRIF_SHADERS_PATH}"
-            -I "Shaders"
-            -D COMPILER_DXC
-            -D VULKAN
+        COMMAND ShaderMake ${SHADERMAKE_GENERAL_ARGS} -p SPIRV -D COMPILER_DXC -D VULKAN --compiler "${DXC_SPIRV_PATH}"
         DEPENDS ShaderMake
         WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
         VERBATIM
