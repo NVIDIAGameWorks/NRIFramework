@@ -126,12 +126,16 @@ file (GLOB_RECURSE SHADERS "Shaders/*.hlsl")
 set_source_files_properties (${SHADERS} PROPERTIES VS_TOOL_OVERRIDE "None")
 
 set (SHADERMAKE_GENERAL_ARGS
-    --useAPI --binary --flatten --stripReflection --WX
-            --sourceDir "Shaders"
-            -c Shaders.cfg
-            -o "${NRIF_SHADERS_PATH}"
-            -I "Shaders"
+    --binary --flatten --stripReflection --WX
+    --sourceDir "Shaders"
+    -c Shaders.cfg
+    -o "${NRIF_SHADERS_PATH}"
+    -I "Shaders"
 )
+
+if (WIN32)
+    set (SHADERMAKE_GENERAL_ARGS --useAPI ${SHADERMAKE_GENERAL_ARGS})
+endif ()
 
 if (WIN32)
     add_custom_target (${PROJECT_NAME}_Shaders ALL
