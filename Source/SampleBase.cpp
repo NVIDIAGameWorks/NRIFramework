@@ -25,8 +25,6 @@ template<typename T> constexpr void MaybeUnused([[maybe_unused]] const T& arg)
 void CreateDebugAllocator(nri::MemoryAllocatorInterface& memoryAllocatorInterface);
 void DestroyDebugAllocator(nri::MemoryAllocatorInterface& memoryAllocatorInterface);
 
-constexpr uint64_t STREAM_BUFFER_SIZE = 8 * 1024 * 1024;
-
 //==================================================================================================================================================
 // MEMORY
 //==================================================================================================================================================
@@ -218,6 +216,13 @@ void SampleBase::GetCameraDescFromInputDevices(CameraDesc& cameraDesc)
         cameraDesc.dLocal.y -= motionScale;
 }
 
+struct ImDrawVertOpt
+{
+    float pos[2];
+    uint32_t uv;
+    uint32_t col;
+};
+
 bool SampleBase::CreateUserInterface(nri::Device& device, const nri::CoreInterface& coreInterface, const nri::HelperInterface& helperInterface, nri::Format renderTargetFormat)
 {
     // ImGui setup
@@ -322,25 +327,25 @@ bool SampleBase::CreateUserInterface(nri::Device& device, const nri::CoreInterfa
 
         nri::VertexStreamDesc vertexStreamDesc = {};
         vertexStreamDesc.bindingSlot = 0;
-        vertexStreamDesc.stride = sizeof(ImDrawVert);
+        vertexStreamDesc.stride = sizeof(ImDrawVertOpt);
 
         nri::VertexAttributeDesc vertexAttributeDesc[3] = {};
         {
             vertexAttributeDesc[0].format = nri::Format::RG32_SFLOAT;
             vertexAttributeDesc[0].streamIndex = 0;
-            vertexAttributeDesc[0].offset = helper::GetOffsetOf(&ImDrawVert::pos);
+            vertexAttributeDesc[0].offset = helper::GetOffsetOf(&ImDrawVertOpt::pos);
             vertexAttributeDesc[0].d3d = {"POSITION", 0};
             vertexAttributeDesc[0].vk = {0};
 
-            vertexAttributeDesc[1].format = nri::Format::RG32_SFLOAT;
+            vertexAttributeDesc[1].format = nri::Format::RG16_UNORM;
             vertexAttributeDesc[1].streamIndex = 0;
-            vertexAttributeDesc[1].offset = helper::GetOffsetOf(&ImDrawVert::uv);
+            vertexAttributeDesc[1].offset = helper::GetOffsetOf(&ImDrawVertOpt::uv);
             vertexAttributeDesc[1].d3d = {"TEXCOORD", 0};
             vertexAttributeDesc[1].vk = {1};
 
             vertexAttributeDesc[2].format = nri::Format::RGBA8_UNORM;
             vertexAttributeDesc[2].streamIndex = 0;
-            vertexAttributeDesc[2].offset = helper::GetOffsetOf(&ImDrawVert::col);
+            vertexAttributeDesc[2].offset = helper::GetOffsetOf(&ImDrawVertOpt::col);
             vertexAttributeDesc[2].d3d = {"COLOR", 0};
             vertexAttributeDesc[2].vk = {2};
         }
@@ -391,48 +396,28 @@ bool SampleBase::CreateUserInterface(nri::Device& device, const nri::CoreInterfa
 
     io.Fonts->GetTexDataAsRGBA32(&fontPixels, &fontTextureWidth, &fontTextureHeight);
 
-    // Resources
+    // Texture
     constexpr nri::Format format = nri::Format::RGBA8_UNORM;
-    {
-        // Geometry
-        nri::BufferDesc bufferDesc = {};
-        bufferDesc.size = STREAM_BUFFER_SIZE;
-        bufferDesc.usageMask = nri::BufferUsageBits::VERTEX_BUFFER | nri::BufferUsageBits::INDEX_BUFFER;
-        if (NRI->CreateBuffer(device, bufferDesc, m_GeometryBuffer) != nri::Result::SUCCESS)
-            return false;
 
-        // Texture
-        nri::TextureDesc textureDesc = {};
-        textureDesc.type = nri::TextureType::TEXTURE_2D;
-        textureDesc.format = format;
-        textureDesc.size[0] = (uint16_t)fontTextureWidth;
-        textureDesc.size[1] = (uint16_t)fontTextureHeight;
-        textureDesc.size[2] = 1;
-        textureDesc.mipNum = 1;
-        textureDesc.arraySize = 1;
-        textureDesc.sampleNum = 1;
-        textureDesc.usageMask = nri::TextureUsageBits::SHADER_RESOURCE;
-        if (NRI->CreateTexture(device, textureDesc, m_FontTexture) != nri::Result::SUCCESS)
-            return false;
-    }
-
-    m_MemoryAllocations.resize(2, nullptr);
-
-    nri::ResourceGroupDesc resourceGroupDesc = {};
-    resourceGroupDesc.memoryLocation = nri::MemoryLocation::HOST_UPLOAD;
-    resourceGroupDesc.bufferNum = 1;
-    resourceGroupDesc.buffers = &m_GeometryBuffer;
-
-    nri::Result result = m_Helper->AllocateAndBindMemory(device, resourceGroupDesc, m_MemoryAllocations.data());
-    if (result != nri::Result::SUCCESS)
+    nri::TextureDesc textureDesc = {};
+    textureDesc.type = nri::TextureType::TEXTURE_2D;
+    textureDesc.format = format;
+    textureDesc.size[0] = (uint16_t)fontTextureWidth;
+    textureDesc.size[1] = (uint16_t)fontTextureHeight;
+    textureDesc.size[2] = 1;
+    textureDesc.mipNum = 1;
+    textureDesc.arraySize = 1;
+    textureDesc.sampleNum = 1;
+    textureDesc.usageMask = nri::TextureUsageBits::SHADER_RESOURCE;
+    if (NRI->CreateTexture(device, textureDesc, m_FontTexture) != nri::Result::SUCCESS)
         return false;
 
-    resourceGroupDesc = {};
+    nri::ResourceGroupDesc resourceGroupDesc = {};
     resourceGroupDesc.memoryLocation = nri::MemoryLocation::DEVICE;
     resourceGroupDesc.textureNum = 1;
     resourceGroupDesc.textures = &m_FontTexture;
 
-    result = m_Helper->AllocateAndBindMemory(device, resourceGroupDesc, m_MemoryAllocations.data() + 1);
+    nri::Result result = m_Helper->AllocateAndBindMemory(device, resourceGroupDesc, &m_FontTextureMemory);
     if (result != nri::Result::SUCCESS)
         return false;
 
@@ -533,15 +518,15 @@ void SampleBase::DestroyUserInterface()
     if (m_GeometryBuffer)
         NRI->DestroyBuffer(*m_GeometryBuffer);
 
-    for (uint32_t i = 0; i < m_MemoryAllocations.size(); i++)
-        NRI->FreeMemory(*m_MemoryAllocations[i]);
+    if (m_FontTextureMemory)
+        NRI->FreeMemory(*m_FontTextureMemory);
+
+    if (m_GeometryBufferMemory)
+        NRI->FreeMemory(*m_GeometryBufferMemory);
 }
 
 void SampleBase::PrepareUserInterface()
 {
-    if (!HasUserInterface())
-        return;
-
     ImGuiIO& io = ImGui::GetIO();
 
     // Setup time step
@@ -597,54 +582,93 @@ void SampleBase::PrepareUserInterface()
     ImGui::NewFrame();
 }
 
-void SampleBase::RenderUserInterface(nri::CommandBuffer& commandBuffer)
+void SampleBase::RenderUserInterface(nri::Device& device, nri::CommandBuffer& commandBuffer)
 {
     if (!HasUserInterface())
         return;
 
-    ImGui::Render();
     const ImDrawData& drawData = *ImGui::GetDrawData();
 
     // Prepare
-    uint32_t vertexDataSize = drawData.TotalVtxCount * sizeof(ImDrawVert);
+    uint32_t vertexDataSize = drawData.TotalVtxCount * sizeof(ImDrawVertOpt);
+    vertexDataSize = helper::Align(vertexDataSize, 16);
     uint32_t indexDataSize = drawData.TotalIdxCount * sizeof(ImDrawIdx);
-    uint32_t vertexDataSizeAligned = helper::Align(vertexDataSize, 16);
-    uint32_t indexDataSizeAligned = helper::Align(indexDataSize, 16);
-    uint32_t totalDataSizeAligned = vertexDataSizeAligned + indexDataSizeAligned;
-    if (!totalDataSizeAligned)
+    indexDataSize = helper::Align(indexDataSize, 16);
+    uint32_t totalDataSize = vertexDataSize + indexDataSize;
+    if (!totalDataSize)
         return;
 
-    assert(totalDataSizeAligned < STREAM_BUFFER_SIZE / BUFFERED_FRAME_MAX_NUM);
-    if (m_StreamBufferOffset + totalDataSizeAligned > STREAM_BUFFER_SIZE)
+    if (totalDataSize * BUFFERED_FRAME_MAX_NUM > m_StreamBufferSize)
+    {
+        m_StreamBufferOffset = 0;
+        m_StreamBufferSize = helper::Align(totalDataSize, 65536) * BUFFERED_FRAME_MAX_NUM;
+
+        // Block graphics // TODO: allocate a new buffer and the current one after BUFFERED_FRAME_MAX_NUM?
+        nri::CommandQueue* graphicsQueue;
+        NRI->GetCommandQueue(device, nri::CommandQueueType::GRAPHICS, graphicsQueue);
+
+        m_Helper->WaitForIdle(*graphicsQueue);
+
+        // Destroy old buffer
+        if (m_GeometryBuffer)
+            NRI->DestroyBuffer(*m_GeometryBuffer);
+
+        if (m_GeometryBufferMemory)
+            NRI->FreeMemory(*m_GeometryBufferMemory);
+
+        // Create new buffer
+        nri::BufferDesc bufferDesc = {};
+        bufferDesc.size = m_StreamBufferSize;
+        bufferDesc.usageMask = nri::BufferUsageBits::VERTEX_BUFFER | nri::BufferUsageBits::INDEX_BUFFER;
+        NRI_ABORT_ON_FAILURE(NRI->CreateBuffer(device, bufferDesc, m_GeometryBuffer));
+
+        nri::ResourceGroupDesc resourceGroupDesc = {};
+        resourceGroupDesc.memoryLocation = nri::MemoryLocation::HOST_UPLOAD;
+        resourceGroupDesc.bufferNum = 1;
+        resourceGroupDesc.buffers = &m_GeometryBuffer;
+
+        NRI_ABORT_ON_FAILURE(m_Helper->AllocateAndBindMemory(device, resourceGroupDesc, &m_GeometryBufferMemory));
+    }
+    else if (m_StreamBufferOffset + totalDataSize > m_StreamBufferSize)
         m_StreamBufferOffset = 0;
 
+    // Upload geometry
     uint64_t indexBufferOffset = m_StreamBufferOffset;
-    uint8_t* indexData = (uint8_t*)NRI->MapBuffer(*m_GeometryBuffer, m_StreamBufferOffset, totalDataSizeAligned);
-    uint64_t vertexBufferOffset = indexBufferOffset + indexDataSizeAligned;
-    uint8_t* vertexData = indexData + indexDataSizeAligned;
+    uint8_t* indexData = (uint8_t*)NRI->MapBuffer(*m_GeometryBuffer, indexBufferOffset, totalDataSize);
+    uint64_t vertexBufferOffset = indexBufferOffset + indexDataSize;
+    ImDrawVertOpt* vertexData = (ImDrawVertOpt*)(indexData + indexDataSize);
 
     for (int32_t n = 0; n < drawData.CmdListsCount; n++)
     {
         const ImDrawList& drawList = *drawData.CmdLists[n];
 
-        uint32_t size = drawList.VtxBuffer.Size * sizeof(ImDrawVert);
-        memcpy(vertexData, drawList.VtxBuffer.Data, size);
-        vertexData += size;
+        for (int32_t i = 0; i < drawList.VtxBuffer.Size; i++)
+        {
+            const ImDrawVert* v = drawList.VtxBuffer.Data + i;
 
-        size = drawList.IdxBuffer.Size * sizeof(ImDrawIdx);
+            ImDrawVertOpt opt;
+            opt.pos[0] = v->pos.x;
+            opt.pos[1] = v->pos.y;
+            opt.uv = Packed::uf2_to_uint1616(v->uv.x, v->uv.y);
+            opt.col = v->col;
+
+            memcpy(vertexData++, &opt, sizeof(opt));
+        }
+
+        size_t size = drawList.IdxBuffer.Size * sizeof(ImDrawIdx);
         memcpy(indexData, drawList.IdxBuffer.Data, size);
         indexData += size;
     }
 
-    m_StreamBufferOffset += totalDataSizeAligned;
-
     NRI->UnmapBuffer(*m_GeometryBuffer);
 
-    float invScreenSize[2];
-    invScreenSize[0] = 1.0f / ImGui::GetIO().DisplaySize.x;
-    invScreenSize[1] = 1.0f / ImGui::GetIO().DisplaySize.y;
+    m_StreamBufferOffset += m_StreamBufferSize / BUFFERED_FRAME_MAX_NUM;
 
-    {
+    { // Render
+        float invScreenSize[2];
+        invScreenSize[0] = 1.0f / ImGui::GetIO().DisplaySize.x;
+        invScreenSize[1] = 1.0f / ImGui::GetIO().DisplaySize.y;
+
         helper::Annotation annotation(*NRI, commandBuffer, "UserInterface");
 
         NRI->CmdSetDescriptorPool(commandBuffer, *m_DescriptorPool);
@@ -819,7 +843,16 @@ void SampleBase::RenderLoop()
         if (glfwWindowShouldClose(m_Window) || this->AppShouldClose())
             break;
 
+        // Prepare
+        if (HasUserInterface())
+            PrepareUserInterface();
+
         PrepareFrame(i);
+        
+        if (HasUserInterface())
+            ImGui::Render();
+
+        // Render
         RenderFrame(i);
 
         double cursorPosx, cursorPosy;

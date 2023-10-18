@@ -41,7 +41,7 @@ constexpr nri::SPIRVBindingOffsets SPIRV_BINDING_OFFSETS = {100, 200, 300, 400};
 constexpr bool D3D11_COMMANDBUFFER_EMULATION = false;
 constexpr uint32_t DEFAULT_MEMORY_ALIGNMENT = 16;
 constexpr uint32_t BUFFERED_FRAME_MAX_NUM = 3;
-constexpr uint32_t SWAP_CHAIN_TEXTURE_NUM = BUFFERED_FRAME_MAX_NUM;
+constexpr uint32_t SWAP_CHAIN_TEXTURE_NUM = 2;
 
 struct BackBuffer
 {
@@ -90,8 +90,7 @@ public:
     void GetCameraDescFromInputDevices(CameraDesc& cameraDesc);
     bool CreateUserInterface(nri::Device& device, const nri::CoreInterface& coreInterface, const nri::HelperInterface& helperInterface, nri::Format renderTargetFormat);
     void DestroyUserInterface();
-    void PrepareUserInterface();
-    void RenderUserInterface(nri::CommandBuffer& commandBuffer);
+    void RenderUserInterface(nri::Device& device, nri::CommandBuffer& commandBuffer);
 
     virtual void InitCmdLine([[maybe_unused]] cmdline::parser& cmdLine) { }
     virtual void ReadCmdLine([[maybe_unused]] cmdline::parser& cmdLine) { }
@@ -119,6 +118,7 @@ protected:
     // Private
 private:
     void CursorMode(int32_t mode);
+    void PrepareUserInterface();
 
 public:
     inline bool HasUserInterface() const
@@ -141,7 +141,6 @@ public:
 
 private:
     // UI
-    std::vector<nri::Memory*> m_MemoryAllocations;
     const nri::CoreInterface* NRI = nullptr;
     const nri::HelperInterface* m_Helper = nullptr;
     nri::Device* m_Device = nullptr;
@@ -152,7 +151,9 @@ private:
     nri::Pipeline* m_Pipeline = nullptr;
     nri::PipelineLayout* m_PipelineLayout = nullptr;
     nri::Texture* m_FontTexture = nullptr;
+    nri::Memory* m_FontTextureMemory = nullptr;
     nri::Buffer* m_GeometryBuffer = nullptr;
+    nri::Memory* m_GeometryBufferMemory = nullptr;
     GLFWcursor* m_MouseCursors[ImGuiMouseCursor_COUNT] = {};
     double m_timePrev = 0.0;
     uint64_t m_StreamBufferOffset = 0;
@@ -164,6 +165,7 @@ private:
 
     // Rendering
     uint32_t m_FrameNum = uint32_t(-1);
+    uint32_t m_StreamBufferSize = 0;
 };
 
 #define _STRINGIFY(s) #s

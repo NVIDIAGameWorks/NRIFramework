@@ -13,11 +13,6 @@ license agreement from NVIDIA CORPORATION is strictly prohibited.
 #include <vector>
 #include <array>
 
-namespace nri
-{
-    struct PhysicalDeviceGroup;
-}
-
 namespace helper
 {
     template<typename T, typename A> constexpr T Align(T x, A alignment)

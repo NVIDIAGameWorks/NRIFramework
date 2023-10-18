@@ -246,7 +246,7 @@ namespace utils
         std::vector<float> keys;
         std::vector<std::vector<MorphTargetIndexWeight>> values;
         std::vector<MorphTargetIndexWeight> activeValues;
-        
+
         uint32_t frameCount = 0;
         AnimationTrackType type = AnimationTrackType::Linear;
     };
@@ -285,7 +285,7 @@ namespace utils
         std::vector<Index> indices;
         std::vector<Primitive> primitives;
         std::vector<MorphVertex> morphVertices;
-        
+
         // Other resources
         std::vector<Material> materials;
         std::vector<Instance> instances;

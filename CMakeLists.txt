@@ -82,14 +82,13 @@ source_group ("MathLib" FILES ${MATHLIB_HEADERS})
 add_subdirectory ("External/NRI")
 
 # External/Glfw
-if (NOT TARGET glfw)
-    option(GLFW_BUILD_EXAMPLES "" OFF)
-    option(GLFW_BUILD_TESTS "" OFF)
-    option(GLFW_BUILD_DOCS "" OFF)
-    option(GLFW_INSTALL "" OFF)
-    add_subdirectory("External/Glfw")
-    set_property (TARGET glfw PROPERTY FOLDER "${PROJECT_NAME}/External")
-endif ()
+option (GLFW_BUILD_EXAMPLES "" OFF)
+option (GLFW_BUILD_TESTS "" OFF)
+option (GLFW_BUILD_DOCS "" OFF)
+option (GLFW_INSTALL "" OFF)
+add_subdirectory ("External/Glfw")
+set_property (TARGET glfw PROPERTY FOLDER "${PROJECT_NAME}/External")
+set_property (TARGET update_mappings PROPERTY FOLDER "${PROJECT_NAME}/External")
 
 # NRIFramework
 file (GLOB FRAMEWORK_SOURCE "Source/*.cpp" "Source/*.h")
