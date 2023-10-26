@@ -90,6 +90,7 @@ void Camera::Update(const CameraDesc& desc, uint32_t frameIndex)
         state.mViewToWorld.SetupByRotationYPR( DegToRad(state.rotation.x), DegToRad(state.rotation.y), DegToRad(state.rotation.z) );
 
     state.mWorldToView = state.mViewToWorld;
+    state.mWorldToView.PreTranslation( state.mWorldToView.GetRow2().To3d() * desc.backwardOffset );
     state.mWorldToView.WorldToView(projFlags);
     state.mWorldToView.PreTranslation( -state.position );
 

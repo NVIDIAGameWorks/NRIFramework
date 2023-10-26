@@ -23,6 +23,7 @@ struct CameraDesc
     float farZ = 10000.0f;
     float orthoRange = 0.0f;
     float timeScale = 0.5f;
+    float backwardOffset = 0.0f;
     bool isReversedZ = false;
     bool isPositiveZ = true;
     bool isCustomMatrixSet = false;

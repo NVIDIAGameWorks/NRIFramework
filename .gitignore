@@ -44,5 +44,5 @@ compile_commands.json
 *.manifest
 
 # generated folders
+_Bin/
 _Build/
-_Compiler/

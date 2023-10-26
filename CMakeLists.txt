@@ -10,10 +10,10 @@ endif()
 # Cached
 if (NOT IS_SUBMODULE)
     set (CMAKE_CONFIGURATION_TYPES "Debug;Release" CACHE STRING "")
+    set (CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/_Bin" CACHE STRING "")
 endif()
 
 set (NRIF_SHADERS_PATH "" CACHE STRING "Shader output path override")
-set (GLOBAL_BIN_OUTPUT_PATH "${CMAKE_SOURCE_DIR}/_Build" CACHE STRING "")
 
 # Create project
 file (READ "${CMAKE_CURRENT_SOURCE_DIR}/Include/NRIFramework.h" ver_h)
@@ -109,7 +109,7 @@ set_property (TARGET ${PROJECT_NAME} PROPERTY FOLDER ${PROJECT_NAME})
 
 # External/ShaderMake
 if (NOT TARGET ShaderMake)
-    set (SHADERMAKE_BIN_OUTPUT_PATH ${GLOBAL_BIN_OUTPUT_PATH} CACHE STRING "")
+    set (SHADERMAKE_BIN_OUTPUT_PATH ${CMAKE_RUNTIME_OUTPUT_DIRECTORY} CACHE STRING "")
     add_subdirectory (External/ShaderMake)
 endif ()
 
