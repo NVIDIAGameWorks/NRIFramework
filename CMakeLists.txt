@@ -48,9 +48,7 @@ endif ()
 
 # Compile definitions
 if (WIN32)
-    set (COMPILE_DEFINITIONS WIN32_LEAN_AND_MEAN NOMINMAX _CRT_SECURE_NO_WARNINGS _UNICODE UNICODE GLFW_EXPOSE_NATIVE_WIN32 GLFW_INCLUDE_NONE)
-else ()
-    set (COMPILE_DEFINITIONS GLFW_EXPOSE_NATIVE_X11 GLFW_INCLUDE_NONE)
+    set (COMPILE_DEFINITIONS WIN32_LEAN_AND_MEAN NOMINMAX _CRT_SECURE_NO_WARNINGS _UNICODE UNICODE)
 endif ()
 
 # External/Imgui
@@ -90,6 +88,14 @@ add_subdirectory ("External/Glfw")
 set_property (TARGET glfw PROPERTY FOLDER "${PROJECT_NAME}/External")
 set_property (TARGET update_mappings PROPERTY FOLDER "${PROJECT_NAME}/External")
 
+# External/MetalUtility
+if (APPLE)
+    find_library(COCOA_LIBRARY Cocoa REQUIRED)
+    find_library(QUARTZ_CORE QuartzCore REQUIRED)
+    add_library(MetalUtility SHARED "External/MetalUtility/MetalUtility.m")
+    target_link_libraries(MetalUtility ${QUARTZ_CORE} ${COCOA_LIBRARY} glfw)
+endif ()
+
 # NRIFramework
 file (GLOB FRAMEWORK_SOURCE "Source/*.cpp" "Source/*.h")
 source_group ("Source" FILES ${FRAMEWORK_SOURCE})
@@ -98,7 +104,9 @@ source_group ("Include" FILES ${FRAMEWORK_HEADERS})
 add_library (${PROJECT_NAME} STATIC ${FRAMEWORK_SOURCE} ${FRAMEWORK_HEADERS} ${MATHLIB_HEADERS})
 target_link_libraries (${PROJECT_NAME} PRIVATE imgui detex glfw)
 
-if (UNIX)
+if (APPLE)
+    target_link_libraries (${PROJECT_NAME} PRIVATE ${CMAKE_DL_LIBS} pthread MetalUtility)
+elseif (UNIX)
     target_link_libraries (${PROJECT_NAME} PRIVATE ${CMAKE_DL_LIBS} pthread X11)
 endif ()
 

@@ -10,9 +10,19 @@ license agreement from NVIDIA CORPORATION is strictly prohibited.
 
 #include "NRIFramework.h"
 
+#if defined _WIN32
+    #define GLFW_EXPOSE_NATIVE_WIN32
+#elif defined __linux__
+    #define GLFW_EXPOSE_NATIVE_X11
+#elif defined __APPLE__
+    #define GLFW_EXPOSE_NATIVE_COCOA
+    #include "MetalUtility/MetalUtility.h"
+#else
+    #error "Unknown platform"
+#endif
 #include "Glfw/include/GLFW/glfw3native.h"
 
-#if __linux__
+#if defined(__linux__) || defined(__APPLE__)
     #include <csignal>
 #endif
 
@@ -159,6 +169,8 @@ nri::WindowSystemType SampleBase::GetWindowSystemType() const
 {
 #if _WIN32
     return nri::WindowSystemType::WINDOWS;
+#elif __APPLE__
+    return nri::WindowSystemType::METAL;
 #else
     return nri::WindowSystemType::X11;
 #endif
@@ -387,24 +399,23 @@ bool SampleBase::CreateUserInterface(nri::Device& device, const nri::CoreInterfa
             return false;
     }
 
-    int32_t fontTextureWidth = 0, fontTextureHeight = 0;
-    uint8_t* fontPixels = nullptr;
-
     ImFontConfig fontConfig = {};
-    fontConfig.SizePixels = 13.0f * contentScale;
+    fontConfig.SizePixels = floor(13.0f * contentScale);
     io.Fonts->AddFontDefault(&fontConfig);
 
-    io.Fonts->GetTexDataAsRGBA32(&fontPixels, &fontTextureWidth, &fontTextureHeight);
+    int32_t fontWidth = 0, fontHeight = 0;
+    uint8_t* fontPixels = nullptr;
+    io.Fonts->GetTexDataAsAlpha8(&fontPixels, &fontWidth, &fontHeight);
 
     // Texture
-    constexpr nri::Format format = nri::Format::RGBA8_UNORM;
+    constexpr nri::Format format = nri::Format::R8_UNORM;
 
     nri::TextureDesc textureDesc = {};
     textureDesc.type = nri::TextureType::TEXTURE_2D;
     textureDesc.format = format;
-    textureDesc.size[0] = (uint16_t)fontTextureWidth;
-    textureDesc.size[1] = (uint16_t)fontTextureHeight;
-    textureDesc.size[2] = 1;
+    textureDesc.width = (uint16_t)fontWidth;
+    textureDesc.height = (uint16_t)fontHeight;
+    textureDesc.depth = 1;
     textureDesc.mipNum = 1;
     textureDesc.arraySize = 1;
     textureDesc.sampleNum = 1;
@@ -427,7 +438,7 @@ bool SampleBase::CreateUserInterface(nri::Device& device, const nri::CoreInterfa
         return false;
 
     utils::Texture texture;
-    utils::LoadTextureFromMemory(format, fontTextureWidth, fontTextureHeight, fontPixels, texture);
+    utils::LoadTextureFromMemory(format, fontWidth, fontHeight, fontPixels, texture);
 
     // Descriptor - sampler
     nri::SamplerDesc samplerDesc = {};
@@ -473,7 +484,7 @@ bool SampleBase::CreateUserInterface(nri::Device& device, const nri::CoreInterfa
 
     // Descriptor set
     {
-        if (NRI->AllocateDescriptorSets(*m_DescriptorPool, *m_PipelineLayout, 0, &m_DescriptorSet, 1, nri::WHOLE_DEVICE_GROUP, 0) != nri::Result::SUCCESS)
+        if (NRI->AllocateDescriptorSets(*m_DescriptorPool, *m_PipelineLayout, 0, &m_DescriptorSet, 1, nri::ALL_NODES, 0) != nri::Result::SUCCESS)
             return false;
 
         nri::DescriptorRangeUpdateDesc descriptorRangeUpdateDesc[] =
@@ -482,7 +493,7 @@ bool SampleBase::CreateUserInterface(nri::Device& device, const nri::CoreInterfa
             {&m_Sampler, 1}
         };
 
-        NRI->UpdateDescriptorRanges(*m_DescriptorSet, nri::WHOLE_DEVICE_GROUP, 0, helper::GetCountOf(descriptorRangeUpdateDesc), descriptorRangeUpdateDesc);
+        NRI->UpdateDescriptorRanges(*m_DescriptorSet, nri::ALL_NODES, 0, helper::GetCountOf(descriptorRangeUpdateDesc), descriptorRangeUpdateDesc);
     }
 
     m_timePrev = glfwGetTime();
@@ -800,6 +811,8 @@ bool SampleBase::Create(int32_t argc, char** argv, const char* windowTitle)
     #elif __linux__
         m_NRIWindow.x11.dpy = glfwGetX11Display();
         m_NRIWindow.x11.window = glfwGetX11Window(m_Window);
+    #elif __APPLE__
+        m_NRIWindow.metal.caMetalLayer = GetMetalLayer(m_Window);
     #endif
 
     // Main initialization
@@ -848,7 +861,7 @@ void SampleBase::RenderLoop()
             PrepareUserInterface();
 
         PrepareFrame(i);
-        
+
         if (HasUserInterface())
             ImGui::Render();
 

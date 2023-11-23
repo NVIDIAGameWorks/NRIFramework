@@ -16,6 +16,7 @@ license agreement from NVIDIA CORPORATION is strictly prohibited.
 #define NRI_FRAMEWORK 1
 
 // 3rd party
+#define GLFW_INCLUDE_NONE
 #include "Glfw/include/GLFW/glfw3.h"
 #include "ImGui/imgui.h"
 
