@@ -387,7 +387,7 @@ void utils::Texture::GetSubresource(nri::TextureSubresourceUploadDesc& subresour
 {
     // TODO: 3D images are not supported, "subresource.slices" needs to be allocated to store pointers to all slices of the current mipmap
     assert(GetDepth() == 1);
-    PLATFORM_UNUSED(arrayIndex);
+    (void)(arrayIndex); // TODO: unused
 
     detexTexture* mip = ToMip(mips[mipIndex]);
 
@@ -502,7 +502,7 @@ static void PostProcessTexture(const std::string &name, Texture& texture, bool c
     texture.format = GetFormatNRI(dTexture[0]->format);
     texture.width = (uint16_t)dTexture[0]->width;
     texture.height = (uint16_t)dTexture[0]->height;
-    texture.mipNum = (uint16_t)mipNum;
+    texture.mipNum = (uint8_t)mipNum;
 
     // TODO: detex doesn't support cubemaps and 3D textures
     texture.arraySize = 1;

@@ -374,7 +374,7 @@ bool SampleBase::CreateUserInterface(nri::Device& device, const nri::CoreInterfa
         rasterizationDesc.fillMode = nri::FillMode::SOLID;
         rasterizationDesc.cullMode = nri::CullMode::NONE;
         rasterizationDesc.sampleNum = 1;
-        rasterizationDesc.sampleMask = 0xFFFF;
+        rasterizationDesc.sampleMask = nri::ALL_SAMPLES;
 
         nri::ColorAttachmentDesc colorAttachmentDesc = {};
         colorAttachmentDesc.format = renderTargetFormat;

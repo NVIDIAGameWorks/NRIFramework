@@ -79,7 +79,7 @@ namespace utils
         uint16_t width = 0;
         uint16_t height = 0;
         uint16_t depth = 0;
-        uint16_t mipNum = 0;
+        uint8_t mipNum = 0;
         uint16_t arraySize = 0;
 
         ~Texture();
@@ -93,7 +93,7 @@ namespace utils
         inline uint16_t GetArraySize() const
         { return arraySize; }
 
-        inline uint16_t GetMipNum() const
+        inline uint8_t GetMipNum() const
         { return mipNum; }
 
         inline uint16_t GetWidth() const
