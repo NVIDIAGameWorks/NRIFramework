@@ -707,10 +707,10 @@ void SampleBase::RenderUserInterface(nri::Device& device, nri::CommandBuffer& co
                 {
                     nri::Rect rect =
                     {
-                        (int32_t)drawCmd.ClipRect.x,
-                        (int32_t)drawCmd.ClipRect.y,
-                        (uint32_t)(drawCmd.ClipRect.z - drawCmd.ClipRect.x),
-                        (uint32_t)(drawCmd.ClipRect.w - drawCmd.ClipRect.y)
+                        (int16_t)drawCmd.ClipRect.x,
+                        (int16_t)drawCmd.ClipRect.y,
+                        (nri::Dim_t)(drawCmd.ClipRect.z - drawCmd.ClipRect.x),
+                        (nri::Dim_t)(drawCmd.ClipRect.w - drawCmd.ClipRect.y)
                     };
                     NRI->CmdSetScissors(commandBuffer, &rect, 1);
 
