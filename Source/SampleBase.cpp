@@ -444,9 +444,9 @@ bool SampleBase::CreateUserInterface(nri::Device& device, const nri::CoreInterfa
     nri::SamplerDesc samplerDesc = {};
     samplerDesc.anisotropy = 1;
     samplerDesc.addressModes = {nri::AddressMode::REPEAT, nri::AddressMode::REPEAT};
-    samplerDesc.magnification = contentScale > 1.25f ? nri::Filter::NEAREST : nri::Filter::LINEAR;
-    samplerDesc.minification = contentScale > 1.25f ? nri::Filter::NEAREST : nri::Filter::LINEAR;
-    samplerDesc.mip = contentScale > 1.25f ? nri::Filter::NEAREST : nri::Filter::LINEAR;
+    samplerDesc.filters.min = contentScale > 1.25f ? nri::Filter::NEAREST : nri::Filter::LINEAR;
+    samplerDesc.filters.mag = contentScale > 1.25f ? nri::Filter::NEAREST : nri::Filter::LINEAR;
+    samplerDesc.filters.mip = contentScale > 1.25f ? nri::Filter::NEAREST : nri::Filter::LINEAR;
 
     if (NRI->CreateSampler(device, samplerDesc, m_Sampler) != nri::Result::SUCCESS)
         return false;
