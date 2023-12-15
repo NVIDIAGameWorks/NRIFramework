@@ -31,7 +31,7 @@ set_property (GLOBAL PROPERTY USE_FOLDERS ON)
 set (CMAKE_CXX_STANDARD 17)
 set (CMAKE_CXX_STANDARD_REQUIRED ON)
 
-if (MSVC)
+if (MSVC AND NOT DEFINED CMAKE_MSVC_RUNTIME_LIBRARY)
     set (CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 endif ()
 
@@ -67,14 +67,14 @@ set_property (TARGET detex PROPERTY FOLDER "${PROJECT_NAME}/External")
 
 # External/MathLib
 file (READ "${CMAKE_CURRENT_SOURCE_DIR}/External/MathLib/MathLib.h" ver_h)
-string (REGEX MATCH "MATHLIB_VERSION_MAJOR ([0-9]*)" _ ${ver_h})
-set (MATHLIB_VERSION_MAJOR ${CMAKE_MATCH_1})
-string (REGEX MATCH "MATHLIB_VERSION_MINOR ([0-9]*)" _ ${ver_h})
-set (MATHLIB_VERSION_MINOR ${CMAKE_MATCH_1})
-message ("MathLib v${MATHLIB_VERSION_MAJOR}.${MATHLIB_VERSION_MINOR}")
+string (REGEX MATCH "ML_VERSION_MAJOR ([0-9]*)" _ ${ver_h})
+set (ML_VERSION_MAJOR ${CMAKE_MATCH_1})
+string (REGEX MATCH "ML_VERSION_MINOR ([0-9]*)" _ ${ver_h})
+set (ML_VERSION_MINOR ${CMAKE_MATCH_1})
+message ("MathLib v${ML_VERSION_MAJOR}.${ML_VERSION_MINOR}")
 
-file (GLOB MATHLIB_HEADERS "External/MathLib/*.h" "External/MathLib/*.hpp")
-source_group ("MathLib" FILES ${MATHLIB_HEADERS})
+file (GLOB ML_HEADERS "External/MathLib/*.h" "External/MathLib/*.hpp")
+source_group ("MathLib" FILES ${ML_HEADERS})
 
 # External/NRI
 add_subdirectory ("External/NRI")
@@ -101,7 +101,7 @@ file (GLOB FRAMEWORK_SOURCE "Source/*.cpp" "Source/*.h")
 source_group ("Source" FILES ${FRAMEWORK_SOURCE})
 file (GLOB FRAMEWORK_HEADERS "Include/*.hpp" "Include/*.h")
 source_group ("Include" FILES ${FRAMEWORK_HEADERS})
-add_library (${PROJECT_NAME} STATIC ${FRAMEWORK_SOURCE} ${FRAMEWORK_HEADERS} ${MATHLIB_HEADERS})
+add_library (${PROJECT_NAME} STATIC ${FRAMEWORK_SOURCE} ${FRAMEWORK_HEADERS} ${ML_HEADERS})
 target_link_libraries (${PROJECT_NAME} PRIVATE imgui detex glfw)
 
 if (APPLE)
