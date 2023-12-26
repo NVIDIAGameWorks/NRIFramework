@@ -464,8 +464,7 @@ bool SampleBase::CreateUserInterface(nri::Device& device, const nri::CoreInterfa
         textureData.mipNum = 1;
         textureData.arraySize = 1;
         textureData.texture = m_FontTexture;
-        textureData.nextLayout = nri::TextureLayout::SHADER_RESOURCE;
-        textureData.nextAccess = nri::AccessBits::SHADER_RESOURCE;
+        textureData.nextState = {nri::AccessBits::SHADER_RESOURCE, nri::TextureLayout::SHADER_RESOURCE};
 
         if ( m_Helper->UploadData(*commandQueue, &textureData, 1, nullptr, 0) != nri::Result::SUCCESS)
             return false;
