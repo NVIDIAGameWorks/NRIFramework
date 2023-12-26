@@ -107,7 +107,7 @@ protected:
     Camera m_Camera;
     Timer m_Timer;
     uint2 m_OutputResolution = {1920, 1080};
-    uint32_t m_VsyncInterval = 0;
+    uint8_t m_VsyncInterval = 0;
     uint32_t m_DpiMode = 0;
     float m_MouseSensitivity = 1.0f;
     bool m_DebugAPI = false;

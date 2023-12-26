@@ -281,7 +281,7 @@ bool SampleBase::CreateUserInterface(nri::Device& device, const nri::CoreInterfa
     io.KeyMap[ImGuiKey_Space] = GLFW_KEY_SPACE;
     io.KeyMap[ImGuiKey_Enter] = GLFW_KEY_ENTER;
     io.KeyMap[ImGuiKey_Escape] = GLFW_KEY_ESCAPE;
-    io.KeyMap[ImGuiKey_KeyPadEnter] = GLFW_KEY_KP_ENTER;
+    io.KeyMap[ImGuiKey_KeypadEnter] = GLFW_KEY_KP_ENTER;
     io.KeyMap[ImGuiKey_A] = GLFW_KEY_A;
     io.KeyMap[ImGuiKey_C] = GLFW_KEY_C;
     io.KeyMap[ImGuiKey_V] = GLFW_KEY_V;
@@ -791,6 +791,7 @@ bool SampleBase::Create(int32_t argc, char** argv, const char* windowTitle)
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
     glfwWindowHint(GLFW_VISIBLE, 0);
     glfwWindowHint(GLFW_DECORATED, decorated ? 1 : 0);
+    glfwWindowHint(GLFW_RESIZABLE, 0);
 
     char windowName[256];
     snprintf(windowName, sizeof(windowName), "%s [%s]", windowTitle, cmdLine.get<std::string>("api").c_str());
@@ -937,7 +938,7 @@ void SampleBase::ReadCmdLineDefault(cmdline::parser& cmdLine)
     m_OutputResolution.x = cmdLine.get<uint32_t>("width");
     m_OutputResolution.y = cmdLine.get<uint32_t>("height");
     m_FrameNum = cmdLine.get<uint32_t>("frameNum");
-    m_VsyncInterval = cmdLine.get<uint32_t>("vsyncInterval");
+    m_VsyncInterval = (uint8_t)cmdLine.get<uint32_t>("vsyncInterval");
     m_DebugAPI = cmdLine.exist("debugAPI");
     m_DebugNRI = cmdLine.exist("debugNRI");
     m_DpiMode = cmdLine.get<uint32_t>("dpiMode");
