@@ -138,6 +138,7 @@ set (SHADERMAKE_GENERAL_ARGS
     -c Shaders.cfg
     -o "${NRIF_SHADERS_PATH}"
     -I "Shaders"
+    -I "External/MathLib"
 )
 
 if (WIN32)

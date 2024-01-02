@@ -11,8 +11,8 @@ license agreement from NVIDIA CORPORATION is strictly prohibited.
 #pragma once
 
 #define NRI_FRAMEWORK_VERSION_MAJOR 0
-#define NRI_FRAMEWORK_VERSION_MINOR 10
-#define NRI_FRAMEWORK_VERSION_DATE "30 November 2023"
+#define NRI_FRAMEWORK_VERSION_MINOR 11
+#define NRI_FRAMEWORK_VERSION_DATE "29 December 2023"
 #define NRI_FRAMEWORK 1
 
 // 3rd party
@@ -84,12 +84,11 @@ public:
     { return m_OutputResolution; }
 
     const nri::Window& GetWindow() const;
-    nri::WindowSystemType GetWindowSystemType() const;
 
     void GetCameraDescFromInputDevices(CameraDesc& cameraDesc);
     bool CreateUserInterface(nri::Device& device, const nri::CoreInterface& coreInterface, const nri::HelperInterface& helperInterface, nri::Format renderTargetFormat);
     void DestroyUserInterface();
-    void RenderUserInterface(nri::Device& device, nri::CommandBuffer& commandBuffer);
+    void RenderUserInterface(nri::Device& device, nri::CommandBuffer& commandBuffer, float sdrScale, bool isSrgb);
 
     virtual void InitCmdLine([[maybe_unused]] cmdline::parser& cmdLine) { }
     virtual void ReadCmdLine([[maybe_unused]] cmdline::parser& cmdLine) { }

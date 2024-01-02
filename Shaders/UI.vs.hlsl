@@ -12,7 +12,9 @@ license agreement from NVIDIA CORPORATION is strictly prohibited.
 
 struct PushConstants
 {
-    float2 invScreenSize;
+    float2 gInvScreenSize;
+    float gSdrScale;
+    float gIsSrgb;
 };
 
 NRI_PUSH_CONSTANTS( PushConstants, g_PushConstants, 0 );
@@ -33,7 +35,7 @@ struct PS_INPUT
 
 PS_INPUT main( VS_INPUT input )
 {
-    float2 p = input.pos.xy * g_PushConstants.invScreenSize;
+    float2 p = input.pos.xy * g_PushConstants.gInvScreenSize;
     p = p * 2.0 - 1.0;
     p.y = -p.y;
 

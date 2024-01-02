@@ -165,17 +165,6 @@ SampleBase::~SampleBase()
 #endif
 }
 
-nri::WindowSystemType SampleBase::GetWindowSystemType() const
-{
-#if _WIN32
-    return nri::WindowSystemType::WINDOWS;
-#elif __APPLE__
-    return nri::WindowSystemType::METAL;
-#else
-    return nri::WindowSystemType::X11;
-#endif
-}
-
 const nri::Window& SampleBase::GetWindow() const
 {
     return m_NRIWindow;
@@ -315,16 +304,16 @@ bool SampleBase::CreateUserInterface(nri::Device& device, const nri::CoreInterfa
 
         nri::DescriptorSetDesc descriptorSet = {0, descriptorRanges, helper::GetCountOf(descriptorRanges)};
 
-        nri::PushConstantDesc pushConstant = {};
-        pushConstant.registerIndex = 0;
-        pushConstant.size = 8;
-        pushConstant.visibility = nri::ShaderStage::VERTEX;
+        nri::PushConstantDesc pushConstants = {};
+        pushConstants.registerIndex = 0;
+        pushConstants.size = 16;
+        pushConstants.visibility = nri::ShaderStage::ALL;
 
         nri::PipelineLayoutDesc pipelineLayoutDesc = {};
         pipelineLayoutDesc.descriptorSetNum = 1;
         pipelineLayoutDesc.descriptorSets = &descriptorSet;
         pipelineLayoutDesc.pushConstantNum = 1;
-        pipelineLayoutDesc.pushConstants = &pushConstant;
+        pipelineLayoutDesc.pushConstants = &pushConstants;
         pipelineLayoutDesc.stageMask = nri::PipelineLayoutShaderStageBits::VERTEX | nri::PipelineLayoutShaderStageBits::FRAGMENT;
 
         if (NRI->CreatePipelineLayout(device, pipelineLayoutDesc, m_PipelineLayout) != nri::Result::SUCCESS)
@@ -592,7 +581,7 @@ void SampleBase::PrepareUserInterface()
     ImGui::NewFrame();
 }
 
-void SampleBase::RenderUserInterface(nri::Device& device, nri::CommandBuffer& commandBuffer)
+void SampleBase::RenderUserInterface(nri::Device& device, nri::CommandBuffer& commandBuffer, float sdrScale, bool isSrgb)
 {
     if (!HasUserInterface())
         return;
@@ -675,16 +664,18 @@ void SampleBase::RenderUserInterface(nri::Device& device, nri::CommandBuffer& co
     m_StreamBufferOffset += m_StreamBufferSize / BUFFERED_FRAME_MAX_NUM;
 
     { // Render
-        float invScreenSize[2];
-        invScreenSize[0] = 1.0f / ImGui::GetIO().DisplaySize.x;
-        invScreenSize[1] = 1.0f / ImGui::GetIO().DisplaySize.y;
+        float consts[4];
+        consts[0] = 1.0f / ImGui::GetIO().DisplaySize.x;
+        consts[1] = 1.0f / ImGui::GetIO().DisplaySize.y;
+        consts[2] = sdrScale;
+        consts[3] = isSrgb ? 1.0f : 0.0f;
 
         helper::Annotation annotation(*NRI, commandBuffer, "UserInterface");
 
         NRI->CmdSetDescriptorPool(commandBuffer, *m_DescriptorPool);
         NRI->CmdSetPipelineLayout(commandBuffer, *m_PipelineLayout);
         NRI->CmdSetPipeline(commandBuffer, *m_Pipeline);
-        NRI->CmdSetConstants(commandBuffer, 0, invScreenSize, sizeof(invScreenSize));
+        NRI->CmdSetConstants(commandBuffer, 0, consts, sizeof(consts));
         NRI->CmdSetIndexBuffer(commandBuffer, *m_GeometryBuffer, indexBufferOffset, sizeof(ImDrawIdx) == 2 ? nri::IndexType::UINT16 : nri::IndexType::UINT32);
         NRI->CmdSetVertexBuffers(commandBuffer, 0, 1, &m_GeometryBuffer, &vertexBufferOffset);
         NRI->CmdSetDescriptorSet(commandBuffer, 0, *m_DescriptorSet, nullptr);
