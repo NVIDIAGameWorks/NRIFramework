@@ -1,12 +1,4 @@
-/*
-Copyright (c) 2022, NVIDIA CORPORATION. All rights reserved.
-
-NVIDIA CORPORATION and its licensors retain all intellectual property
-and proprietary rights in and to this software, related documentation
-and any modifications thereto. Any use, reproduction, disclosure or
-distribution of this software and related documentation without an express
-license agreement from NVIDIA CORPORATION is strictly prohibited.
-*/
+// © 2021 NVIDIA Corporation
 
 #if _WIN32
     #include <io.h>
@@ -85,12 +77,12 @@ static void GenerateMorphTargetVertices(utils::Scene& scene, const utils::Mesh& 
 
         float3 uvEdge20 = float3(v2.uv[0], v2.uv[1], 0.0f) - float3(v0.uv[0], v0.uv[1], 0.0f);
         float3 uvEdge10 = float3(v1.uv[0], v1.uv[1], 0.0f) - float3(v0.uv[0], v0.uv[1], 0.0f);
-        
+
         // base normals
         float3 nb0 = v0.normal;
         float3 nb1 = v1.normal;
         float3 nb2 = v2.normal;
-        
+
         // src morph target data is delta
         float3 n0 = float3((float *)(normalSrc + normalStride * i0)) + nb0;
         float3 n1 = float3((float *)(normalSrc + normalStride * i1)) + nb1;
@@ -567,7 +559,7 @@ static void PostProcessTexture(const std::string &name, Texture& texture, bool c
 }
 }
 
-bool utils::LoadTextureFromMemory(const std::string& name, const uint8_t* data, int dataSize, 
+bool utils::LoadTextureFromMemory(const std::string& name, const uint8_t* data, int dataSize,
     Texture& texture, bool computeAvgColorAndAlphaMode)
 {
     printf("Loading embedded texture '%s'...\n", name.c_str());
@@ -590,7 +582,7 @@ bool utils::LoadTextureFromMemory(const std::string& name, const uint8_t* data, 
     dTexture[0]->data = (uint8_t*)malloc(size);
     memcpy(dTexture[0]->data, image, size);
     stbi_image_free(image);
-    
+
     const int kMipNum = 1;
     PostProcessTexture(name, texture, computeAvgColorAndAlphaMode, dTexture, kMipNum);
     return true;
@@ -611,7 +603,7 @@ bool utils::LoadTexture(const std::string& path, Texture& texture, bool computeA
     }
 
     PostProcessTexture(path, texture, computeAvgColorAndAlphaMode, dTexture, mipNum);
-    
+
     return true;
 }
 
@@ -840,7 +832,7 @@ bool utils::LoadScene(const std::string& path, Scene& scene, bool allowUpdate)
                 continue;
 
             size_t meshVertices = 0;
-            
+
             // search for position, first attribute may not be position and may have different size if malformed
             for (size_t attr_idx = 0; attr_idx < gltfSubmesh.attributes_count; attr_idx++)
             {
@@ -851,7 +843,7 @@ bool utils::LoadScene(const std::string& path, Scene& scene, bool allowUpdate)
                     break;
                 }
             }
-                    
+
             if (meshVertices == 0)
                 continue;
 
@@ -1137,7 +1129,7 @@ bool utils::LoadScene(const std::string& path, Scene& scene, bool allowUpdate)
 
                 auto [positionSrc, positionStride] = cgltfBufferIterator(target_positions, sizeof(float) * 3);
                 auto [normalSrc, normalStride] = cgltfBufferIterator(target_normals, sizeof(float) * 3);
-                
+
                 GenerateMorphTargetVertices(scene, mesh, target_idx, positionSrc, positionStride, normalSrc, normalStride);
             }
 
@@ -1170,7 +1162,7 @@ bool utils::LoadScene(const std::string& path, Scene& scene, bool allowUpdate)
             // Update cache for new mesh Instance Index
             sharedMeshInstanceIndices[currentSceneMeshIndex] = meshInstanceIndex;
         }
-        
+
         scene.meshInstances.push_back({});
 
         MeshInstance& meshInstance = scene.meshInstances.back();
@@ -1455,8 +1447,8 @@ bool utils::LoadScene(const std::string& path, Scene& scene, bool allowUpdate)
                             Mesh& mesh = scene.meshes[meshInstance.meshIndex];
                             if (mesh.HasMorphTargets())
                             {
-                                // only take the first animation track 
-                                if (std::find_if(animation.morphMeshInstances.begin(), animation.morphMeshInstances.end(), 
+                                // only take the first animation track
+                                if (std::find_if(animation.morphMeshInstances.begin(), animation.morphMeshInstances.end(),
                                     [&instance](auto &x) { return x.meshInstanceIndex == instance.meshInstanceIndex; }) ==
                                     animation.morphMeshInstances.end())
                                 {
@@ -1651,7 +1643,7 @@ bool utils::LoadScene(const std::string& path, Scene& scene, bool allowUpdate)
                     {
                         std::string filenameDDS = filename.substr(0, filename.find_last_of('.')) + ".dds";
                         isLoaded = LoadTexture(filenameDDS, *tex, computeAlphaMode);
-                    }   
+                    }
                 }
 
                 if (isLoaded)
@@ -1666,9 +1658,9 @@ bool utils::LoadScene(const std::string& path, Scene& scene, bool allowUpdate)
                 }
                 else
                     delete tex;
-                
-                
-               
+
+
+
             }
             else
                 textureIndex = it->second;
@@ -1688,7 +1680,7 @@ bool utils::LoadScene(const std::string& path, Scene& scene, bool allowUpdate)
         const Texture* diffuseTexture = scene.textures[material.baseColorTexIndex];
         material.alphaMode = useTransmission ? AlphaMode::TRANSPARENT : diffuseTexture->alphaMode;
         material.isHair = strstr(gltfMaterial.name, "hair") != 0;
-        
+
         // TODO: remove strange polygon on the window in Kitchen scene
         if (strstr(gltfMaterial.name, "Material_295"))
             material.alphaMode = AlphaMode::OFF;
@@ -1779,7 +1771,7 @@ void utils::Scene::Animate(float animationSpeed, float elapsedTime, float& anima
         float keyTo = track.keys[to];
         float time = animTimeSec < keyFrom ? keyFrom : (animTimeSec > keyTo ? keyTo : animTimeSec);
         float factor = to != from ? (time - keyFrom) / (keyTo - keyFrom) : 0.0f;
-       
+
         switch (track.type)
         {
             case AnimationTrackType::Step:

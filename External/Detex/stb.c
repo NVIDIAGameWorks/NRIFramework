@@ -1,15 +1,3 @@
-/*
-
-Copyright (c) 2018-2020, NVIDIA CORPORATION.  All rights reserved.
-
-NVIDIA CORPORATION and its licensors retain all intellectual property
-and proprietary rights in and to this software, related documentation
-and any modifications thereto.  Any use, reproduction, disclosure or
-distribution of this software and related documentation without an express
-license agreement from NVIDIA CORPORATION is strictly prohibited.
-
-*/
-
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -30,13 +18,13 @@ license agreement from NVIDIA CORPORATION is strictly prohibited.
 
 // Load texture from an image file using stb_image (first mip-map only).
 // Formats supported: JPEG, PNG, TGA, BMP, PSD, GIF, HDR, PIC, PNM.
-// Returns true if successful. The texture is allocated, free with free(). 
+// Returns true if successful. The texture is allocated, free with free().
 bool detexLoadImageFile(const char *filename, detexTexture ***texture_out) {
 	int x, y, comp;
 	unsigned char *image = stbi_load(filename, &x, &y, &comp, STBI_rgb_alpha);
 	if (!image)
 	{
-		detexSetErrorMessage("detexLoadImageFile: Could not open file %s. Reason: %s", 
+		detexSetErrorMessage("detexLoadImageFile: Could not open file %s. Reason: %s",
 			filename, stbi_failure_reason());
 		return false;
 	}
@@ -65,8 +53,8 @@ DETEX_API bool detexSaveImageFile(detexTexture *texture, const char *filename)
 		return false;
 	}
 	size_t filename_length = strlen(filename);
-	if ((filename_length > 4 && strncasecmp(filename + filename_length - 4, ".jpg", 4) == 0) || 
-		(filename_length > 5 && strncasecmp(filename + filename_length - 5, ".jpeg", 5) == 0)) 
+	if ((filename_length > 4 && strncasecmp(filename + filename_length - 4, ".jpg", 4) == 0) ||
+		(filename_length > 5 && strncasecmp(filename + filename_length - 5, ".jpeg", 5) == 0))
 		return stbi_write_jpg(filename, texture->width, texture->height, 4, texture->data, 0);
 	else if (filename_length > 4 && strncasecmp(filename + filename_length - 4, ".png", 4) == 0)
 		return stbi_write_png(filename, texture->width, texture->height, 4, texture->data, 4 * texture->width);
