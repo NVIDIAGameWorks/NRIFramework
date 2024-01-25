@@ -75,7 +75,8 @@ public:
     inline uint2 GetOutputResolution() const
     { return m_OutputResolution; }
 
-    const nri::Window& GetWindow() const;
+    inline const nri::Window& SampleBase::GetWindow() const
+    { return m_NRIWindow; }
 
     void GetCameraDescFromInputDevices(CameraDesc& cameraDesc);
     bool CreateUserInterface(nri::Device& device, const nri::CoreInterface& coreInterface, const nri::HelperInterface& helperInterface, nri::Format renderTargetFormat);
@@ -95,9 +96,11 @@ protected:
     nri::MemoryAllocatorInterface m_MemoryAllocatorInterface = {};
     std::string m_SceneFile = "ShaderBalls/ShaderBalls.gltf";
     sFastRand m_FastRandState = {};
+    GLFWwindow* m_Window = nullptr;
     Camera m_Camera;
     Timer m_Timer;
     uint2 m_OutputResolution = {1920, 1080};
+    uint2 m_WindowResolution = {};
     uint8_t m_VsyncInterval = 0;
     uint32_t m_DpiMode = 0;
     float m_MouseSensitivity = 1.0f;
@@ -147,11 +150,7 @@ private:
     GLFWcursor* m_MouseCursors[ImGuiMouseCursor_COUNT] = {};
     double m_timePrev = 0.0;
     uint64_t m_StreamBufferOffset = 0;
-
-    // Window
-    GLFWwindow* m_Window = nullptr;
     nri::Window m_NRIWindow = {};
-    uint2 m_WindowResolution = {};
 
     // Rendering
     uint32_t m_FrameNum = uint32_t(-1);

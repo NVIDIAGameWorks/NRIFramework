@@ -157,11 +157,6 @@ SampleBase::~SampleBase()
 #endif
 }
 
-const nri::Window& SampleBase::GetWindow() const
-{
-    return m_NRIWindow;
-}
-
 void SampleBase::GetCameraDescFromInputDevices(CameraDesc& cameraDesc)
 {
     cameraDesc.timeScale = 0.025f * m_Timer.GetSmoothedFrameTime();
@@ -241,12 +236,6 @@ bool SampleBase::CreateUserInterface(nri::Device& device, const nri::CoreInterfa
     io.BackendFlags |= ImGuiBackendFlags_HasMouseCursors; // We can honor GetMouseCursor() values (optional)
     io.BackendFlags |= ImGuiBackendFlags_HasSetMousePos; // We can honor io.WantSetMousePos requests (optional, rarely used)
     io.IniFilename = nullptr;
-    io.DisplaySize = ImVec2((float)m_WindowResolution.x, (float)m_WindowResolution.y);
-
-    #if defined(_WIN32)
-        io.ImeWindowHandle = glfwGetWin32Window(m_Window);
-    #endif
-
     io.KeyMap[ImGuiKey_Tab] = GLFW_KEY_TAB;
     io.KeyMap[ImGuiKey_LeftArrow] = GLFW_KEY_LEFT;
     io.KeyMap[ImGuiKey_RightArrow] = GLFW_KEY_RIGHT;
@@ -523,6 +512,7 @@ void SampleBase::PrepareUserInterface()
     // Setup time step
     double timeCur = glfwGetTime();
     io.DeltaTime = (float)(timeCur - m_timePrev);
+    io.DisplaySize = ImVec2((float)m_WindowResolution.x, (float)m_WindowResolution.y);
     m_timePrev = timeCur;
 
     // Read keyboard modifiers inputs
