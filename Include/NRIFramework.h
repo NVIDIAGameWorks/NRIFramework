@@ -10,7 +10,7 @@
 // 3rd party
 #define GLFW_INCLUDE_NONE
 #include "Glfw/include/GLFW/glfw3.h"
-#include "ImGui/imgui.h"
+#include "Imgui/imgui.h"
 
 // Dependencies
 #include "MathLib/MathLib.h"
@@ -75,7 +75,7 @@ public:
     inline uint2 GetOutputResolution() const
     { return m_OutputResolution; }
 
-    inline const nri::Window& SampleBase::GetWindow() const
+    inline const nri::Window& GetWindow() const
     { return m_NRIWindow; }
 
     void GetCameraDescFromInputDevices(CameraDesc& cameraDesc);
