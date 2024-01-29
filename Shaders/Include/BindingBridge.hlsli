@@ -28,3 +28,12 @@
             structName constantBufferName; \
         }
 #endif
+
+// Printf
+#ifdef __hlsl_dx_compiler
+    #if (!defined(VULKAN))
+        #define printf(...)
+    #endif
+#else
+    #define printf
+#endif
