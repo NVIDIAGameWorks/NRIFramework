@@ -77,6 +77,7 @@ file (GLOB ML_HEADERS "External/MathLib/*.h" "External/MathLib/*.hpp")
 source_group ("MathLib" FILES ${ML_HEADERS})
 
 # External/NRI
+# option (NRI_ENABLE_AGILITY_SDK_SUPPORT "" ON)
 add_subdirectory ("External/NRI")
 
 # External/Glfw

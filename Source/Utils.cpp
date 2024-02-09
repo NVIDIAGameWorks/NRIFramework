@@ -27,22 +27,28 @@
 
 #include "Detex/stb_image.h"
 
-constexpr std::array<const char*, 13> gShaderExts =
+struct Shader
 {
-    "",
-    ".vs.",
-    ".tcs.",
-    ".tes.",
-    ".gs.",
-    ".fs.",
-    ".cs.",
-    ".rgen.",
-    ".rmiss.",
-    "<noimpl>",
-    ".rchit.",
-    ".rahit.",
-    "<noimpl>"
+    const char* ext;
+    nri::StageBits stage;
 };
+
+constexpr std::array<Shader, 13> gShaderExts =
+{{
+    {"", nri::StageBits::NONE},
+    {".vs.", nri::StageBits::VERTEX_SHADER},
+    {".tcs.", nri::StageBits::TESS_CONTROL_SHADER},
+    {".tes.", nri::StageBits::TESS_EVALUATION_SHADER},
+    {".gs.", nri::StageBits::GEOMETRY_SHADER},
+    {".fs.", nri::StageBits::FRAGMENT_SHADER},
+    {".cs.", nri::StageBits::COMPUTE_SHADER},
+    {".rgen.", nri::StageBits::RAYGEN_SHADER},
+    {".rmiss.", nri::StageBits::MISS_SHADER},
+    {"<noimpl>", nri::StageBits::INTERSECTION_SHADER},
+    {".rchit.", nri::StageBits::CLOSEST_HIT_SHADER},
+    {".rahit.", nri::StageBits::ANY_HIT_SHADER},
+    {"<noimpl>", nri::StageBits::CALLABLE_SHADER},
+}};
 
 //========================================================================================================================
 // MISC
@@ -455,17 +461,17 @@ nri::ShaderDesc utils::LoadShader(nri::GraphicsAPI graphicsAPI, const std::strin
     std::string path = GetFullPath(shaderName + ext, DataFolder::SHADERS);
     nri::ShaderDesc shaderDesc = {};
 
-    uint32_t i = 1;
-    for (; i < (uint32_t)gShaderExts.size(); i++)
+    size_t i = 1;
+    for (; i < gShaderExts.size(); i++)
     {
-        if (path.rfind(gShaderExts[i]) != std::string::npos)
+        if (path.rfind(gShaderExts[i].ext) != std::string::npos)
         {
             storage.push_back( std::vector<uint8_t>() );
             std::vector<uint8_t>& code = storage.back();
 
             if (LoadFile(path, code))
             {
-                shaderDesc.stage = (nri::ShaderStage)i;
+                shaderDesc.stage = gShaderExts[i].stage;
                 shaderDesc.bytecode = code.data();
                 shaderDesc.size = code.size();
                 shaderDesc.entryPointName = entryPointName;
@@ -475,7 +481,7 @@ nri::ShaderDesc utils::LoadShader(nri::GraphicsAPI graphicsAPI, const std::strin
         }
     }
 
-    if (i == (uint32_t)nri::ShaderStage::MAX_NUM)
+    if (i == gShaderExts.size())
     {
         printf("ERROR: Shader '%s' has invalid shader extension!\n", shaderName.c_str());
 

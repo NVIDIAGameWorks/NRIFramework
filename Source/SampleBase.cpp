@@ -279,8 +279,8 @@ bool SampleBase::CreateUserInterface(nri::Device& device, const nri::CoreInterfa
     {
         nri::DescriptorRangeDesc descriptorRanges[] =
         {
-            {0, 1, nri::DescriptorType::TEXTURE, nri::ShaderStage::FRAGMENT},
-            {0, 1, nri::DescriptorType::SAMPLER, nri::ShaderStage::FRAGMENT},
+            {0, 1, nri::DescriptorType::TEXTURE, nri::StageBits::FRAGMENT_SHADER},
+            {0, 1, nri::DescriptorType::SAMPLER, nri::StageBits::FRAGMENT_SHADER},
         };
 
         nri::DescriptorSetDesc descriptorSet = {0, descriptorRanges, helper::GetCountOf(descriptorRanges)};
@@ -288,20 +288,20 @@ bool SampleBase::CreateUserInterface(nri::Device& device, const nri::CoreInterfa
         nri::PushConstantDesc pushConstants = {};
         pushConstants.registerIndex = 0;
         pushConstants.size = 16;
-        pushConstants.visibility = nri::ShaderStage::ALL;
+        pushConstants.shaderStages = nri::StageBits::ALL;
 
         nri::PipelineLayoutDesc pipelineLayoutDesc = {};
         pipelineLayoutDesc.descriptorSetNum = 1;
         pipelineLayoutDesc.descriptorSets = &descriptorSet;
         pipelineLayoutDesc.pushConstantNum = 1;
         pipelineLayoutDesc.pushConstants = &pushConstants;
-        pipelineLayoutDesc.stageMask = nri::PipelineLayoutShaderStageBits::VERTEX | nri::PipelineLayoutShaderStageBits::FRAGMENT;
+        pipelineLayoutDesc.shaderStages = nri::StageBits::VERTEX_SHADER | nri::StageBits::FRAGMENT_SHADER;
 
         if (NRI->CreatePipelineLayout(device, pipelineLayoutDesc, m_PipelineLayout) != nri::Result::SUCCESS)
             return false;
 
         utils::ShaderCodeStorage shaderCodeStorage;
-        nri::ShaderDesc shaderStages[] =
+        nri::ShaderDesc shaders[] =
         {
             utils::LoadShader(deviceDesc.graphicsAPI, "UI.vs", shaderCodeStorage),
             utils::LoadShader(deviceDesc.graphicsAPI, "UI.fs", shaderCodeStorage),
@@ -362,8 +362,8 @@ bool SampleBase::CreateUserInterface(nri::Device& device, const nri::CoreInterfa
         graphicsPipelineDesc.inputAssembly = &inputAssemblyDesc;
         graphicsPipelineDesc.rasterization = &rasterizationDesc;
         graphicsPipelineDesc.outputMerger = &outputMergerDesc;
-        graphicsPipelineDesc.shaderStages = shaderStages;
-        graphicsPipelineDesc.shaderStageNum = helper::GetCountOf(shaderStages);
+        graphicsPipelineDesc.shaders = shaders;
+        graphicsPipelineDesc.shaderNum = helper::GetCountOf(shaders);
 
         if (NRI->CreateGraphicsPipeline(device, graphicsPipelineDesc, m_Pipeline) != nri::Result::SUCCESS)
             return false;
@@ -434,7 +434,7 @@ bool SampleBase::CreateUserInterface(nri::Device& device, const nri::CoreInterfa
         textureData.mipNum = 1;
         textureData.arraySize = 1;
         textureData.texture = m_FontTexture;
-        textureData.nextState = {nri::AccessBits::SHADER_RESOURCE, nri::TextureLayout::SHADER_RESOURCE};
+        textureData.after = {nri::AccessBits::SHADER_RESOURCE, nri::Layout::SHADER_RESOURCE};
 
         if ( m_Helper->UploadData(*commandQueue, &textureData, 1, nullptr, 0) != nri::Result::SUCCESS)
             return false;
@@ -684,9 +684,12 @@ void SampleBase::RenderUserInterface(nri::Device& device, nri::CommandBuffer& co
                         (nri::Dim_t)(drawCmd.ClipRect.z - drawCmd.ClipRect.x),
                         (nri::Dim_t)(drawCmd.ClipRect.w - drawCmd.ClipRect.y)
                     };
-                    NRI->CmdSetScissors(commandBuffer, &rect, 1);
 
-                    NRI->CmdDrawIndexed(commandBuffer, drawCmd.ElemCount, 1, indexOffset, vertexOffset, 0);
+                    if (rect.width != 0 && rect.height != 0)
+                    {
+                        NRI->CmdSetScissors(commandBuffer, &rect, 1);
+                        NRI->CmdDrawIndexed(commandBuffer, drawCmd.ElemCount, 1, indexOffset, vertexOffset, 0);
+                    }
                 }
                 indexOffset += drawCmd.ElemCount;
             }

@@ -1,6 +1,5 @@
 // © 2021 NVIDIA Corporation
 
-
 #if( defined( __cplusplus ) )
     #define NRI_RESOURCE( resourceType, resourceName, regName, bindingIndex, setIndex ) \
         struct resourceName
@@ -11,6 +10,8 @@
 
         #define NRI_PUSH_CONSTANTS( structName, constantBufferName, bindingIndex ) \
             [[vk::push_constant]] structName constantBufferName
+
+        #define PRINTF_AVAILABLE
     #else
         #define NRI_RESOURCE( resourceType, resourceName, regName, bindingIndex, setIndex ) \
             resourceType resourceName : register( regName ## bindingIndex, space ## setIndex )
@@ -27,13 +28,4 @@
         { \
             structName constantBufferName; \
         }
-#endif
-
-// Printf
-#ifdef __hlsl_dx_compiler
-    #if (!defined(VULKAN))
-        #define printf(...)
-    #endif
-#else
-    #define printf
 #endif
