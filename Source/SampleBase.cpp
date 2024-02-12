@@ -431,8 +431,6 @@ bool SampleBase::CreateUserInterface(nri::Device& device, const nri::CoreInterfa
 
         nri::TextureUploadDesc textureData = {};
         textureData.subresources = &subresource;
-        textureData.mipNum = 1;
-        textureData.arraySize = 1;
         textureData.texture = m_FontTexture;
         textureData.after = {nri::AccessBits::SHADER_RESOURCE, nri::Layout::SHADER_RESOURCE};
 
