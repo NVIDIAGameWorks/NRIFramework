@@ -333,19 +333,19 @@ bool SampleBase::CreateUserInterface(nri::Device& device, const nri::CoreInterfa
             vertexAttributeDesc[2].vk = {2};
         }
 
+        nri::VertexInputDesc vertexInputDesc = {};
+        vertexInputDesc.attributes = vertexAttributeDesc;
+        vertexInputDesc.attributeNum = (uint8_t)helper::GetCountOf(vertexAttributeDesc);
+        vertexInputDesc.streams = &vertexStreamDesc;
+        vertexInputDesc.streamNum = 1;
+
         nri::InputAssemblyDesc inputAssemblyDesc = {};
         inputAssemblyDesc.topology = nri::Topology::TRIANGLE_LIST;
-        inputAssemblyDesc.attributes = vertexAttributeDesc;
-        inputAssemblyDesc.attributeNum = (uint8_t)helper::GetCountOf(vertexAttributeDesc);
-        inputAssemblyDesc.streams = &vertexStreamDesc;
-        inputAssemblyDesc.streamNum = 1;
 
         nri::RasterizationDesc rasterizationDesc = {};
         rasterizationDesc.viewportNum = 1;
         rasterizationDesc.fillMode = nri::FillMode::SOLID;
         rasterizationDesc.cullMode = nri::CullMode::NONE;
-        rasterizationDesc.sampleNum = 1;
-        rasterizationDesc.sampleMask = nri::ALL_SAMPLES;
 
         nri::ColorAttachmentDesc colorAttachmentDesc = {};
         colorAttachmentDesc.format = renderTargetFormat;
@@ -360,9 +360,10 @@ bool SampleBase::CreateUserInterface(nri::Device& device, const nri::CoreInterfa
 
         nri::GraphicsPipelineDesc graphicsPipelineDesc = {};
         graphicsPipelineDesc.pipelineLayout = m_PipelineLayout;
-        graphicsPipelineDesc.inputAssembly = &inputAssemblyDesc;
-        graphicsPipelineDesc.rasterization = &rasterizationDesc;
-        graphicsPipelineDesc.outputMerger = &outputMergerDesc;
+        graphicsPipelineDesc.vertexInput = &vertexInputDesc;
+        graphicsPipelineDesc.inputAssembly = inputAssemblyDesc;
+        graphicsPipelineDesc.rasterization = rasterizationDesc;
+        graphicsPipelineDesc.outputMerger = outputMergerDesc;
         graphicsPipelineDesc.shaders = shaders;
         graphicsPipelineDesc.shaderNum = helper::GetCountOf(shaders);
 
@@ -452,7 +453,7 @@ bool SampleBase::CreateUserInterface(nri::Device& device, const nri::CoreInterfa
 
     // Descriptor set
     {
-        if (NRI->AllocateDescriptorSets(*m_DescriptorPool, *m_PipelineLayout, 0, &m_DescriptorSet, 1, nri::ALL_NODES, 0) != nri::Result::SUCCESS)
+        if (NRI->AllocateDescriptorSets(*m_DescriptorPool, *m_PipelineLayout, 0, &m_DescriptorSet, 1, 0) != nri::Result::SUCCESS)
             return false;
 
         nri::DescriptorRangeUpdateDesc descriptorRangeUpdateDesc[] =
@@ -461,7 +462,7 @@ bool SampleBase::CreateUserInterface(nri::Device& device, const nri::CoreInterfa
             {&m_Sampler, 1}
         };
 
-        NRI->UpdateDescriptorRanges(*m_DescriptorSet, nri::ALL_NODES, 0, helper::GetCountOf(descriptorRangeUpdateDesc), descriptorRangeUpdateDesc);
+        NRI->UpdateDescriptorRanges(*m_DescriptorSet, 0, helper::GetCountOf(descriptorRangeUpdateDesc), descriptorRangeUpdateDesc);
     }
 
     m_timePrev = glfwGetTime();
@@ -665,7 +666,7 @@ void SampleBase::RenderUserInterface(nri::Device& device, nri::CommandBuffer& co
         NRI->CmdSetViewports(commandBuffer, &viewport, 1);
 
         int32_t vertexOffset = 0;
-        int32_t indexOffset = 0;
+        uint32_t indexOffset = 0;
         for (int32_t n = 0; n < drawData.CmdListsCount; n++)
         {
             const ImDrawList& drawList = *drawData.CmdLists[n];
@@ -687,7 +688,7 @@ void SampleBase::RenderUserInterface(nri::Device& device, nri::CommandBuffer& co
                     if (rect.width != 0 && rect.height != 0)
                     {
                         NRI->CmdSetScissors(commandBuffer, &rect, 1);
-                        NRI->CmdDrawIndexed(commandBuffer, drawCmd.ElemCount, 1, indexOffset, vertexOffset, 0);
+                        NRI->CmdDrawIndexed(commandBuffer, {drawCmd.ElemCount, 1, indexOffset, vertexOffset, 0});
                     }
                 }
                 indexOffset += drawCmd.ElemCount;
