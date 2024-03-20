@@ -212,7 +212,7 @@ struct ImDrawVertOpt
     uint32_t col;
 };
 
-bool SampleBase::CreateUserInterface(nri::Device& device, const nri::CoreInterface& coreInterface, const nri::HelperInterface& helperInterface, nri::Format renderTargetFormat)
+bool SampleBase::InitUI(const nri::CoreInterface& NRI, const nri::HelperInterface& helperInterface, nri::Device& device, nri::Format renderTargetFormat)
 {
     // ImGui setup
     IMGUI_CHECKVERSION();
@@ -269,12 +269,7 @@ bool SampleBase::CreateUserInterface(nri::Device& device, const nri::CoreInterfa
     m_MouseCursors[ImGuiMouseCursor_ResizeNWSE] = glfwCreateStandardCursor(GLFW_ARROW_CURSOR);  // FIXME: GLFW doesn't have this.
     m_MouseCursors[ImGuiMouseCursor_Hand] = glfwCreateStandardCursor(GLFW_HAND_CURSOR);
 
-    // Rendering
-    m_Device = &device;
-    NRI = &coreInterface;
-    m_Helper = &helperInterface;
-
-    const nri::DeviceDesc& deviceDesc = NRI->GetDeviceDesc(device);
+    const nri::DeviceDesc& deviceDesc = NRI.GetDeviceDesc(device);
 
     // Pipeline
     {
@@ -298,7 +293,7 @@ bool SampleBase::CreateUserInterface(nri::Device& device, const nri::CoreInterfa
         pipelineLayoutDesc.pushConstants = &pushConstants;
         pipelineLayoutDesc.shaderStages = nri::StageBits::VERTEX_SHADER | nri::StageBits::FRAGMENT_SHADER;
 
-        if (NRI->CreatePipelineLayout(device, pipelineLayoutDesc, m_PipelineLayout) != nri::Result::SUCCESS)
+        if (NRI.CreatePipelineLayout(device, pipelineLayoutDesc, m_PipelineLayout) != nri::Result::SUCCESS)
             return false;
 
         utils::ShaderCodeStorage shaderCodeStorage;
@@ -367,7 +362,7 @@ bool SampleBase::CreateUserInterface(nri::Device& device, const nri::CoreInterfa
         graphicsPipelineDesc.shaders = shaders;
         graphicsPipelineDesc.shaderNum = helper::GetCountOf(shaders);
 
-        if (NRI->CreateGraphicsPipeline(device, graphicsPipelineDesc, m_Pipeline) != nri::Result::SUCCESS)
+        if (NRI.CreateGraphicsPipeline(device, graphicsPipelineDesc, m_Pipeline) != nri::Result::SUCCESS)
             return false;
     }
 
@@ -392,7 +387,7 @@ bool SampleBase::CreateUserInterface(nri::Device& device, const nri::CoreInterfa
     textureDesc.arraySize = 1;
     textureDesc.sampleNum = 1;
     textureDesc.usageMask = nri::TextureUsageBits::SHADER_RESOURCE;
-    if (NRI->CreateTexture(device, textureDesc, m_FontTexture) != nri::Result::SUCCESS)
+    if (NRI.CreateTexture(device, textureDesc, m_FontTexture) != nri::Result::SUCCESS)
         return false;
 
     nri::ResourceGroupDesc resourceGroupDesc = {};
@@ -400,13 +395,13 @@ bool SampleBase::CreateUserInterface(nri::Device& device, const nri::CoreInterfa
     resourceGroupDesc.textureNum = 1;
     resourceGroupDesc.textures = &m_FontTexture;
 
-    nri::Result result = m_Helper->AllocateAndBindMemory(device, resourceGroupDesc, &m_FontTextureMemory);
+    nri::Result result = helperInterface.AllocateAndBindMemory(device, resourceGroupDesc, &m_FontTextureMemory);
     if (result != nri::Result::SUCCESS)
         return false;
 
     // Descriptor - texture
     nri::Texture2DViewDesc texture2DViewDesc = {m_FontTexture, nri::Texture2DViewType::SHADER_RESOURCE_2D, format};
-    if (NRI->CreateTexture2DView(texture2DViewDesc, m_FontShaderResource) != nri::Result::SUCCESS)
+    if (NRI.CreateTexture2DView(texture2DViewDesc, m_FontShaderResource) != nri::Result::SUCCESS)
         return false;
 
     utils::Texture texture;
@@ -420,12 +415,12 @@ bool SampleBase::CreateUserInterface(nri::Device& device, const nri::CoreInterfa
     samplerDesc.filters.mag = contentScale > 1.25f ? nri::Filter::NEAREST : nri::Filter::LINEAR;
     samplerDesc.filters.mip = contentScale > 1.25f ? nri::Filter::NEAREST : nri::Filter::LINEAR;
 
-    if (NRI->CreateSampler(device, samplerDesc, m_Sampler) != nri::Result::SUCCESS)
+    if (NRI.CreateSampler(device, samplerDesc, m_Sampler) != nri::Result::SUCCESS)
         return false;
 
     // Upload data
     nri::CommandQueue* commandQueue = nullptr;
-    NRI->GetCommandQueue(device, nri::CommandQueueType::GRAPHICS, commandQueue);
+    NRI.GetCommandQueue(device, nri::CommandQueueType::GRAPHICS, commandQueue);
     {
 
         nri::TextureSubresourceUploadDesc subresource = {};
@@ -436,7 +431,7 @@ bool SampleBase::CreateUserInterface(nri::Device& device, const nri::CoreInterfa
         textureData.texture = m_FontTexture;
         textureData.after = {nri::AccessBits::SHADER_RESOURCE, nri::Layout::SHADER_RESOURCE};
 
-        if ( m_Helper->UploadData(*commandQueue, &textureData, 1, nullptr, 0) != nri::Result::SUCCESS)
+        if (helperInterface.UploadData(*commandQueue, &textureData, 1, nullptr, 0) != nri::Result::SUCCESS)
             return false;
     }
 
@@ -447,13 +442,13 @@ bool SampleBase::CreateUserInterface(nri::Device& device, const nri::CoreInterfa
         descriptorPoolDesc.textureMaxNum = 1;
         descriptorPoolDesc.samplerMaxNum = 1;
 
-        if (NRI->CreateDescriptorPool(device, descriptorPoolDesc, m_DescriptorPool) != nri::Result::SUCCESS)
+        if (NRI.CreateDescriptorPool(device, descriptorPoolDesc, m_DescriptorPool) != nri::Result::SUCCESS)
             return false;
     }
 
     // Descriptor set
     {
-        if (NRI->AllocateDescriptorSets(*m_DescriptorPool, *m_PipelineLayout, 0, &m_DescriptorSet, 1, 0) != nri::Result::SUCCESS)
+        if (NRI.AllocateDescriptorSets(*m_DescriptorPool, *m_PipelineLayout, 0, &m_DescriptorSet, 1, 0) != nri::Result::SUCCESS)
             return false;
 
         nri::DescriptorRangeUpdateDesc descriptorRangeUpdateDesc[] =
@@ -462,58 +457,42 @@ bool SampleBase::CreateUserInterface(nri::Device& device, const nri::CoreInterfa
             {&m_Sampler, 1}
         };
 
-        NRI->UpdateDescriptorRanges(*m_DescriptorSet, 0, helper::GetCountOf(descriptorRangeUpdateDesc), descriptorRangeUpdateDesc);
+        NRI.UpdateDescriptorRanges(*m_DescriptorSet, 0, helper::GetCountOf(descriptorRangeUpdateDesc), descriptorRangeUpdateDesc);
     }
 
-    m_timePrev = glfwGetTime();
+    m_TimePrev = glfwGetTime();
 
     return true;
 }
 
-void SampleBase::DestroyUserInterface()
+void SampleBase::DestroyUI(const nri::CoreInterface& NRI)
 {
     if (!HasUserInterface())
         return;
 
     ImGui::DestroyContext();
 
-    if (m_DescriptorPool)
-        NRI->DestroyDescriptorPool(*m_DescriptorPool);
-
-    if (m_Pipeline)
-        NRI->DestroyPipeline(*m_Pipeline);
-
-    if (m_PipelineLayout)
-        NRI->DestroyPipelineLayout(*m_PipelineLayout);
-
-    if (m_Sampler)
-        NRI->DestroyDescriptor(*m_Sampler);
-
-    if (m_FontShaderResource)
-        NRI->DestroyDescriptor(*m_FontShaderResource);
-
-    if (m_FontTexture)
-        NRI->DestroyTexture(*m_FontTexture);
-
-    if (m_GeometryBuffer)
-        NRI->DestroyBuffer(*m_GeometryBuffer);
-
-    if (m_FontTextureMemory)
-        NRI->FreeMemory(*m_FontTextureMemory);
-
-    if (m_GeometryBufferMemory)
-        NRI->FreeMemory(*m_GeometryBufferMemory);
+    NRI.DestroyDescriptorPool(*m_DescriptorPool);
+    NRI.DestroyPipeline(*m_Pipeline);
+    NRI.DestroyPipelineLayout(*m_PipelineLayout);
+    NRI.DestroyDescriptor(*m_Sampler);
+    NRI.DestroyDescriptor(*m_FontShaderResource);
+    NRI.DestroyTexture(*m_FontTexture);
+    NRI.FreeMemory(*m_FontTextureMemory);
 }
 
-void SampleBase::PrepareUserInterface()
+void SampleBase::BeginUI()
 {
+    if (!HasUserInterface())
+        return;
+
     ImGuiIO& io = ImGui::GetIO();
 
     // Setup time step
     double timeCur = glfwGetTime();
-    io.DeltaTime = (float)(timeCur - m_timePrev);
+    io.DeltaTime = (float)(timeCur - m_TimePrev);
     io.DisplaySize = ImVec2((float)m_WindowResolution.x, (float)m_WindowResolution.y);
-    m_timePrev = timeCur;
+    m_TimePrev = timeCur;
 
     // Read keyboard modifiers inputs
     io.KeyCtrl = IsKeyPressed(Key::LControl) || IsKeyPressed(Key::RControl);
@@ -563,10 +542,13 @@ void SampleBase::PrepareUserInterface()
     ImGui::NewFrame();
 }
 
-void SampleBase::RenderUserInterface(nri::Device& device, nri::CommandBuffer& commandBuffer, float sdrScale, bool isSrgb)
+void SampleBase::EndUI(const nri::StreamerInterface& streamerInterface, nri::Streamer& streamer)
 {
     if (!HasUserInterface())
         return;
+
+    ImGui::EndFrame();
+    ImGui::Render();
 
     const ImDrawData& drawData = *ImGui::GetDrawData();
 
@@ -579,44 +561,11 @@ void SampleBase::RenderUserInterface(nri::Device& device, nri::CommandBuffer& co
     if (!totalDataSize)
         return;
 
-    if (totalDataSize * BUFFERED_FRAME_MAX_NUM > m_StreamBufferSize)
-    {
-        m_StreamBufferOffset = 0;
-        m_StreamBufferSize = helper::Align(totalDataSize, 65536) * BUFFERED_FRAME_MAX_NUM;
+    if (m_UiData.size() < totalDataSize)
+        m_UiData.resize(totalDataSize);
 
-        // Block graphics // TODO: allocate a new buffer and the current one after BUFFERED_FRAME_MAX_NUM?
-        nri::CommandQueue* graphicsQueue;
-        NRI->GetCommandQueue(device, nri::CommandQueueType::GRAPHICS, graphicsQueue);
-
-        m_Helper->WaitForIdle(*graphicsQueue);
-
-        // Destroy old buffer
-        if (m_GeometryBuffer)
-            NRI->DestroyBuffer(*m_GeometryBuffer);
-
-        if (m_GeometryBufferMemory)
-            NRI->FreeMemory(*m_GeometryBufferMemory);
-
-        // Create new buffer
-        nri::BufferDesc bufferDesc = {};
-        bufferDesc.size = m_StreamBufferSize;
-        bufferDesc.usageMask = nri::BufferUsageBits::VERTEX_BUFFER | nri::BufferUsageBits::INDEX_BUFFER;
-        NRI_ABORT_ON_FAILURE(NRI->CreateBuffer(device, bufferDesc, m_GeometryBuffer));
-
-        nri::ResourceGroupDesc resourceGroupDesc = {};
-        resourceGroupDesc.memoryLocation = nri::MemoryLocation::HOST_UPLOAD;
-        resourceGroupDesc.bufferNum = 1;
-        resourceGroupDesc.buffers = &m_GeometryBuffer;
-
-        NRI_ABORT_ON_FAILURE(m_Helper->AllocateAndBindMemory(device, resourceGroupDesc, &m_GeometryBufferMemory));
-    }
-    else if (m_StreamBufferOffset + totalDataSize > m_StreamBufferSize)
-        m_StreamBufferOffset = 0;
-
-    // Upload geometry
-    uint64_t indexBufferOffset = m_StreamBufferOffset;
-    uint8_t* indexData = (uint8_t*)NRI->MapBuffer(*m_GeometryBuffer, indexBufferOffset, totalDataSize);
-    uint64_t vertexBufferOffset = indexBufferOffset + indexDataSize;
+    // Repack geometry
+    uint8_t* indexData = m_UiData.data();
     ImDrawVertOpt* vertexData = (ImDrawVertOpt*)(indexData + indexDataSize);
 
     for (int32_t n = 0; n < drawData.CmdListsCount; n++)
@@ -641,60 +590,71 @@ void SampleBase::RenderUserInterface(nri::Device& device, nri::CommandBuffer& co
         indexData += size;
     }
 
-    NRI->UnmapBuffer(*m_GeometryBuffer);
+    // Add update request
+    nri::BufferUpdateRequestDesc bufferUpdateRequestDesc = {};
+    bufferUpdateRequestDesc.data = m_UiData.data();
+    bufferUpdateRequestDesc.dataSize = m_UiData.size();
 
-    m_StreamBufferOffset += m_StreamBufferSize / BUFFERED_FRAME_MAX_NUM;
+    m_IbOffset = streamerInterface.AddStreamerBufferUpdateRequest(streamer, bufferUpdateRequestDesc);
+    m_VbOffset = m_IbOffset + indexDataSize;
+}
 
-    { // Render
-        float consts[4];
-        consts[0] = 1.0f / ImGui::GetIO().DisplaySize.x;
-        consts[1] = 1.0f / ImGui::GetIO().DisplaySize.y;
-        consts[2] = sdrScale;
-        consts[3] = isSrgb ? 1.0f : 0.0f;
+void SampleBase::RenderUI(const nri::CoreInterface& NRI, const nri::StreamerInterface& streamerInterface, nri::Streamer& streamer, nri::CommandBuffer& commandBuffer, float sdrScale, bool isSrgb)
+{
+    if (!HasUserInterface() || m_VbOffset == m_IbOffset)
+        return;
 
-        helper::Annotation annotation(*NRI, commandBuffer, "UserInterface");
+    float consts[4];
+    consts[0] = 1.0f / ImGui::GetIO().DisplaySize.x;
+    consts[1] = 1.0f / ImGui::GetIO().DisplaySize.y;
+    consts[2] = sdrScale;
+    consts[3] = isSrgb ? 1.0f : 0.0f;
 
-        NRI->CmdSetDescriptorPool(commandBuffer, *m_DescriptorPool);
-        NRI->CmdSetPipelineLayout(commandBuffer, *m_PipelineLayout);
-        NRI->CmdSetPipeline(commandBuffer, *m_Pipeline);
-        NRI->CmdSetConstants(commandBuffer, 0, consts, sizeof(consts));
-        NRI->CmdSetIndexBuffer(commandBuffer, *m_GeometryBuffer, indexBufferOffset, sizeof(ImDrawIdx) == 2 ? nri::IndexType::UINT16 : nri::IndexType::UINT32);
-        NRI->CmdSetVertexBuffers(commandBuffer, 0, 1, &m_GeometryBuffer, &vertexBufferOffset);
-        NRI->CmdSetDescriptorSet(commandBuffer, 0, *m_DescriptorSet, nullptr);
+    helper::Annotation annotation(NRI, commandBuffer, "UI");
 
-        const nri::Viewport viewport = { 0.0f, 0.0f, ImGui::GetIO().DisplaySize.x, ImGui::GetIO().DisplaySize.y, 0.0f, 1.0f };
-        NRI->CmdSetViewports(commandBuffer, &viewport, 1);
+    NRI.CmdSetDescriptorPool(commandBuffer, *m_DescriptorPool);
+    NRI.CmdSetPipelineLayout(commandBuffer, *m_PipelineLayout);
+    NRI.CmdSetPipeline(commandBuffer, *m_Pipeline);
+    NRI.CmdSetConstants(commandBuffer, 0, consts, sizeof(consts));
+    NRI.CmdSetDescriptorSet(commandBuffer, 0, *m_DescriptorSet, nullptr);
 
-        int32_t vertexOffset = 0;
-        uint32_t indexOffset = 0;
-        for (int32_t n = 0; n < drawData.CmdListsCount; n++)
+    nri::Buffer* geometryBuffer = streamerInterface.GetStreamerDynamicBuffer(streamer);
+    NRI.CmdSetIndexBuffer(commandBuffer, *geometryBuffer, m_IbOffset, sizeof(ImDrawIdx) == 2 ? nri::IndexType::UINT16 : nri::IndexType::UINT32);
+    NRI.CmdSetVertexBuffers(commandBuffer, 0, 1, &geometryBuffer, &m_VbOffset);
+
+    const nri::Viewport viewport = {0.0f, 0.0f, ImGui::GetIO().DisplaySize.x, ImGui::GetIO().DisplaySize.y, 0.0f, 1.0f};
+    NRI.CmdSetViewports(commandBuffer, &viewport, 1);
+
+    const ImDrawData& drawData = *ImGui::GetDrawData();
+    int32_t vertexOffset = 0;
+    uint32_t indexOffset = 0;
+    for (int32_t n = 0; n < drawData.CmdListsCount; n++)
+    {
+        const ImDrawList& drawList = *drawData.CmdLists[n];
+        for (int32_t i = 0; i < drawList.CmdBuffer.Size; i++)
         {
-            const ImDrawList& drawList = *drawData.CmdLists[n];
-            for (int32_t i = 0; i < drawList.CmdBuffer.Size; i++)
+            const ImDrawCmd& drawCmd = drawList.CmdBuffer[i];
+            if (drawCmd.UserCallback)
+                drawCmd.UserCallback(&drawList, &drawCmd);
+            else
             {
-                const ImDrawCmd& drawCmd = drawList.CmdBuffer[i];
-                if (drawCmd.UserCallback)
-                    drawCmd.UserCallback(&drawList, &drawCmd);
-                else
+                nri::Rect rect =
                 {
-                    nri::Rect rect =
-                    {
-                        (int16_t)drawCmd.ClipRect.x,
-                        (int16_t)drawCmd.ClipRect.y,
-                        (nri::Dim_t)(drawCmd.ClipRect.z - drawCmd.ClipRect.x),
-                        (nri::Dim_t)(drawCmd.ClipRect.w - drawCmd.ClipRect.y)
-                    };
+                    (int16_t)drawCmd.ClipRect.x,
+                    (int16_t)drawCmd.ClipRect.y,
+                    (nri::Dim_t)(drawCmd.ClipRect.z - drawCmd.ClipRect.x),
+                    (nri::Dim_t)(drawCmd.ClipRect.w - drawCmd.ClipRect.y)
+                };
 
-                    if (rect.width != 0 && rect.height != 0)
-                    {
-                        NRI->CmdSetScissors(commandBuffer, &rect, 1);
-                        NRI->CmdDrawIndexed(commandBuffer, {drawCmd.ElemCount, 1, indexOffset, vertexOffset, 0});
-                    }
+                if (rect.width != 0 && rect.height != 0)
+                {
+                    NRI.CmdSetScissors(commandBuffer, &rect, 1);
+                    NRI.CmdDrawIndexed(commandBuffer, {drawCmd.ElemCount, 1, indexOffset, vertexOffset, 0});
                 }
-                indexOffset += drawCmd.ElemCount;
             }
-            vertexOffset += drawList.VtxBuffer.Size;
+            indexOffset += drawCmd.ElemCount;
         }
+        vertexOffset += drawList.VtxBuffer.Size;
     }
 }
 
@@ -818,8 +778,9 @@ void SampleBase::RenderLoop()
 {
     for (uint32_t i = 0; i < m_FrameNum; i++)
     {
-        std::this_thread::sleep_for(std::chrono::milliseconds(0));
+        LatencySleep(i);
 
+        // Events
         glfwPollEvents();
 
         m_IsActive = glfwGetWindowAttrib(m_Window, GLFW_FOCUSED) != 0;
@@ -832,16 +793,7 @@ void SampleBase::RenderLoop()
         if (glfwWindowShouldClose(m_Window) || this->AppShouldClose())
             break;
 
-        // Prepare
-        if (HasUserInterface())
-            PrepareUserInterface();
-
         PrepareFrame(i);
-
-        if (HasUserInterface())
-            ImGui::Render();
-
-        // Render
         RenderFrame(i);
 
         double cursorPosx, cursorPosy;
