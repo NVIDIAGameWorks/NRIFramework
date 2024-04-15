@@ -25,7 +25,7 @@ namespace utils
         White,
         Invalid,
         FlatNormal,
-        ScramblingRanking1spp,
+        ScramblingRanking16spp,
         SobolSequence
     };
 
