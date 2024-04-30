@@ -1542,10 +1542,10 @@ bool utils::LoadScene(const std::string& path, Scene& scene, bool allowUpdate)
             scene.textures.push_back(texture);
         }
 
-        // StaticTexture::ScramblingRanking16spp
+        // StaticTexture::ScramblingRanking4spp
         {
             Texture* texture = new Texture;
-            const std::string& texPath = GetFullPath("scrambling_ranking_128x128_2d_16spp.png", DataFolder::TEXTURES);
+            const std::string& texPath = GetFullPath("scrambling_ranking_128x128_2d_4spp.png", DataFolder::TEXTURES);
             NRI_ABORT_ON_FALSE(LoadTexture(texPath, *texture));
             texture->OverrideFormat(nri::Format::RGBA8_UINT);
             scene.textures.push_back(texture);

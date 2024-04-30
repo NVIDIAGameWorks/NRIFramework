@@ -138,15 +138,15 @@ set (SHADERMAKE_GENERAL_ARGS
     --sourceDir "Shaders"
     -c Shaders.cfg
     -o "${NRIF_SHADERS_PATH}"
-    -I "Shaders"
+    -I "External/NRI/Include"
     -I "External/MathLib"
 )
 
 if (WIN32)
     add_custom_target (${PROJECT_NAME}_Shaders ALL
-        COMMAND ShaderMake ${SHADERMAKE_GENERAL_ARGS} -p DXBC -D COMPILER_FXC --compiler "${FXC_PATH}"
-        COMMAND ShaderMake ${SHADERMAKE_GENERAL_ARGS} -p DXIL -D COMPILER_DXC --compiler "${DXC_PATH}"
-        COMMAND ShaderMake ${SHADERMAKE_GENERAL_ARGS} -p SPIRV -D COMPILER_DXC -D VULKAN --compiler "${DXC_SPIRV_PATH}"
+        COMMAND ShaderMake ${SHADERMAKE_GENERAL_ARGS} -p DXBC --compiler "${FXC_PATH}"
+        COMMAND ShaderMake ${SHADERMAKE_GENERAL_ARGS} -p DXIL --compiler "${DXC_PATH}"
+        COMMAND ShaderMake ${SHADERMAKE_GENERAL_ARGS} -p SPIRV --compiler "${DXC_SPIRV_PATH}"
         DEPENDS ShaderMake
         WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
         VERBATIM
@@ -154,7 +154,7 @@ if (WIN32)
     )
 else ()
     add_custom_target (${PROJECT_NAME}_Shaders ALL
-        COMMAND ShaderMake ${SHADERMAKE_GENERAL_ARGS} -p SPIRV -D COMPILER_DXC -D VULKAN --compiler "${DXC_SPIRV_PATH}"
+        COMMAND ShaderMake ${SHADERMAKE_GENERAL_ARGS} -p SPIRV --compiler "${DXC_SPIRV_PATH}"
         DEPENDS ShaderMake
         WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
         VERBATIM

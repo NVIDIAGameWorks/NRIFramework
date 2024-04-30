@@ -1,6 +1,6 @@
 // © 2021 NVIDIA Corporation
 
-#include "Include/BindingBridge.hlsli"
+#include "NRICompatibility.hlsli"
 #include "STL.hlsli"
 
 struct PushConstants
