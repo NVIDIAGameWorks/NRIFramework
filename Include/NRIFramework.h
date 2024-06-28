@@ -10,7 +10,7 @@
 // 3rd party
 #define GLFW_INCLUDE_NONE
 #include "Glfw/include/GLFW/glfw3.h"
-#include "ImGui/imgui.h"
+#include "Imgui/imgui.h"
 
 // Dependencies
 #include "MathLib/MathLib.h"
