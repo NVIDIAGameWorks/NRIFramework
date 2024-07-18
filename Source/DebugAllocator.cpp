@@ -1,14 +1,8 @@
-#include <cstdlib>
-#include <atomic>
-#include <iostream>
-
-#include "NRI.h"
-#include "Helper.h"
-#include "Extensions/NRIDeviceCreation.h"
-
 #if _WIN32
 #include <windows.h>
 #endif
+
+#include "NRIFramework.h"
 
 struct DebugAllocator
 {

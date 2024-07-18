@@ -1,26 +1,11 @@
 // © 2021 NVIDIA Corporation
 
-#if _WIN32
-    #include <io.h>
-#endif
+#include "NRIFramework.h"
 
-#include <array>
-#include <map>
 #include <functional>
-
-#include <algorithm>
-#include <fstream>
 #include <filesystem>
 
 #include "Detex/detex.h"
-
-#include "MathLib/MathLib.h"
-
-#include "NRI.h"
-#include "Extensions/NRIHelper.h"
-
-#include "Helper.h"
-#include "Utils.h"
 
 #define CGLTF_IMPLEMENTATION
 #include "cgltf.h"
@@ -53,6 +38,7 @@ constexpr std::array<Shader, 13> gShaderExts =
 //========================================================================================================================
 // MISC
 //========================================================================================================================
+
 static void GenerateMorphTargetVertices(utils::Scene& scene, const utils::Mesh& mesh, uint32_t morphTargetIndex,
     const uint8_t* positionSrc, size_t positionStride, const uint8_t* normalSrc, size_t normalStride)
 {
@@ -72,9 +58,9 @@ static void GenerateMorphTargetVertices(utils::Scene& scene, const utils::Mesh& 
         const utils::UnpackedVertex& v2 = scene.unpackedVertices[mesh.vertexOffset + i2];
 
         // base verts
-        float3 pb0 = v0.position;
-        float3 pb1 = v1.position;
-        float3 pb2 = v2.position;
+        float3 pb0 = v0.pos;
+        float3 pb1 = v1.pos;
+        float3 pb2 = v2.pos;
 
         // src morph target data is delta
         float3 p0 = float3((float *)(positionSrc + positionStride * i0)) + pb0;
@@ -85,9 +71,9 @@ static void GenerateMorphTargetVertices(utils::Scene& scene, const utils::Mesh& 
         float3 uvEdge10 = float3(v1.uv[0], v1.uv[1], 0.0f) - float3(v0.uv[0], v0.uv[1], 0.0f);
 
         // base normals
-        float3 nb0 = v0.normal;
-        float3 nb1 = v1.normal;
-        float3 nb2 = v2.normal;
+        float3 nb0 = v0.N;
+        float3 nb1 = v1.N;
+        float3 nb2 = v2.N;
 
         // src morph target data is delta
         float3 n0 = float3((float *)(normalSrc + normalStride * i0)) + nb0;
@@ -98,12 +84,12 @@ static void GenerateMorphTargetVertices(utils::Scene& scene, const utils::Mesh& 
         float r = uvEdge10.x * uvEdge20.y - uvEdge20.x * uvEdge10.y;
 
         float3 tangent, bitangent;
-        if (Abs(r) < 1e-9f)
+        if (abs(r) < 1e-9f)
         {
             n1.z += 1e-6f;
 
             tangent = GetPerpendicularVector(n1);
-            bitangent = Cross(n1, tangent);
+            bitangent = cross(n1, tangent);
         }
         else
         {
@@ -129,30 +115,29 @@ static void GenerateMorphTargetVertices(utils::Scene& scene, const utils::Mesh& 
     for (size_t j = 0; j < mesh.vertexNum; j++)
     {
         const utils::UnpackedVertex& v = scene.unpackedVertices[mesh.vertexOffset + j];
-        float3 pb = v.position;
-        float3 nb = v.normal;
+        float3 pb = v.pos;
+        float3 nb = v.N;
 
         float3 P = float3((float*)(positionSrc + positionStride * j)) + pb;
         float3 N = float3((float*)(normalSrc + normalStride * j)) + nb;
         float3 T = tangents[j];
-        if (Length(T) < 1e-9f)
-            T = Cross(bitangents[j], N);
+        if (length(T) < 1e-9f)
+            T = cross(bitangents[j], N);
         else // Gram-Schmidt orthogonalize
-            T -= N * Dot33(N, T);
-        T = Normalize(T);
+            T -= N * dot(N, T);
+        T = normalize(T);
 
         // Calculate handedness
-        float handedness = Sign(Dot33(Cross(N, T), bitangents[j]));
+        float handedness = sign(dot(cross(N, T), bitangents[j]));
 
         // Output
-        float2 n = Packed::EncodeUnitVector( N, true );
-        float2 t = Packed::EncodeUnitVector( T, true );
+        float2 n = Packing::EncodeUnitVector( N, true );
+        float2 t = Packing::EncodeUnitVector( T, true );
 
         utils::MorphVertex& morphVertex = scene.morphVertices[vertexOffset + j];
-        morphVertex.position[0] = Packed::sf2_to_h2(P.x, P.y);
-        morphVertex.position[1] = Packed::sf2_to_h2(P.z, handedness);
-        morphVertex.normal = Packed::sf2_to_h2(n.x, n.y);
-        morphVertex.tangent = Packed::sf2_to_h2(t.x, t.y);
+        morphVertex.pos = Packing::float4_to_float16_t4( float4(P.x, P.y, P.z, handedness) );
+        morphVertex.N = Packing::float2_to_float16_t2( float2(n.x, n.y) );
+        morphVertex.T = Packing::float2_to_float16_t2( float2(t.x, t.y) );
     }
 }
 
@@ -176,34 +161,34 @@ static void GeneratePrimitiveDataAndTangents(utils::Scene& scene, const utils::M
         const utils::UnpackedVertex& v1 = scene.unpackedVertices[mesh.vertexOffset + i1];
         const utils::UnpackedVertex& v2 = scene.unpackedVertices[mesh.vertexOffset + i2];
 
-        float3 p0(v0.position);
-        float3 p1(v1.position);
-        float3 p2(v2.position);
+        float3 p0(v0.pos);
+        float3 p1(v1.pos);
+        float3 p2(v2.pos);
 
         float3 edge20 = p2 - p0;
         float3 edge10 = p1 - p0;
-        float worldArea = Max( Length( Cross(edge20, edge10) ), 1e-9f );
+        float worldArea = max( length( cross(edge20, edge10) ), 1e-9f );
 
         float3 uvEdge20 = float3(v2.uv[0], v2.uv[1], 0.0f) - float3(v0.uv[0], v0.uv[1], 0.0f);
         float3 uvEdge10 = float3(v1.uv[0], v1.uv[1], 0.0f) - float3(v0.uv[0], v0.uv[1], 0.0f);
-        float uvArea = Length( Cross(uvEdge20, uvEdge10) );
+        float uvArea = length( cross(uvEdge20, uvEdge10) );
 
         utils::Primitive& primitive = scene.primitives[primitiveBaseIndex / 3];
-        primitive.worldToUvUnits = uvArea == 0 ? 1.0f : Sqrt( uvArea / worldArea );
+        primitive.worldToUvUnits = uvArea == 0 ? 1.0f : sqrt( uvArea / worldArea );
 
         // Unsigned curvature // TODO: make signed?
         // https://computergraphics.stackexchange.com/questions/1718/what-is-the-simplest-way-to-compute-principal-curvature-for-a-mesh-triangle
-        float3 n0 = float3(v0.normal);
-        float3 n1 = float3(v1.normal);
-        float3 n2 = float3(v2.normal);
+        float3 n0 = float3(v0.N);
+        float3 n1 = float3(v1.N);
+        float3 n2 = float3(v2.N);
 
-        double curvature10 = Abs( Dot33(n1 - n0, p1 - p0) ) / LengthSquared(p1 - p0);
-        double curvature21 = Abs( Dot33(n2 - n1, p2 - p1) ) / LengthSquared(p2 - p1);
-        double curvature02 = Abs( Dot33(n0 - n2, p0 - p2) ) / LengthSquared(p0 - p2);
+        double curvature10 = abs( dot(n1 - n0, p1 - p0) ) / Math::LengthSquared(p1 - p0);
+        double curvature21 = abs( dot(n2 - n1, p2 - p1) ) / Math::LengthSquared(p2 - p1);
+        double curvature02 = abs( dot(n0 - n2, p0 - p2) ) / Math::LengthSquared(p0 - p2);
 
-        curvatures[i0] += Max(curvature10, curvature02) * worldArea;
-        curvatures[i1] += Max(curvature10, curvature21) * worldArea;
-        curvatures[i2] += Max(curvature02, curvature21) * worldArea;
+        curvatures[i0] += max(curvature10, curvature02) * worldArea;
+        curvatures[i1] += max(curvature10, curvature21) * worldArea;
+        curvatures[i2] += max(curvature02, curvature21) * worldArea;
 
         curvatureWeights[i0] += worldArea;
         curvatureWeights[i1] += worldArea;
@@ -213,12 +198,12 @@ static void GeneratePrimitiveDataAndTangents(utils::Scene& scene, const utils::M
         float r = uvEdge10.x * uvEdge20.y - uvEdge20.x * uvEdge10.y;
 
         float3 tangent, bitangent;
-        if (Abs(r) < 1e-9f)
+        if (abs(r) < 1e-9f)
         {
             n1.z += 1e-6f;
 
             tangent = GetPerpendicularVector(n1);
-            bitangent = Cross(n1, tangent);
+            bitangent = cross(n1, tangent);
         }
         else
         {
@@ -243,28 +228,28 @@ static void GeneratePrimitiveDataAndTangents(utils::Scene& scene, const utils::M
     for (size_t j = 0; j < mesh.vertexNum; j++)
     {
         utils::UnpackedVertex& unpackedVertex = scene.unpackedVertices[mesh.vertexOffset + j];
-        float3 N = float3(unpackedVertex.normal);
+        float3 N = float3(unpackedVertex.N);
 
         float3 T = tangents[j];
-        if (Length(T) < 1e-9f)
-            T = Cross(bitangents[j], N);
+        if (length(T) < 1e-9f)
+            T = cross(bitangents[j], N);
         else // Gram-Schmidt orthogonalize
-            T -= N * Dot33(N, T);
-        T = Normalize(T);
+            T -= N * dot(N, T);
+        T = normalize(T);
 
         // Calculate handedness
-        float handedness = Sign( Dot33(Cross(N, T), bitangents[j]) );
+        float handedness = sign( dot(cross(N, T), bitangents[j]) );
 
         // Output
         float4 result = float4(T.x, T.y, T.z, handedness);
-        unpackedVertex.tangent[0] = result.x;
-        unpackedVertex.tangent[1] = result.y;
-        unpackedVertex.tangent[2] = result.z;
-        unpackedVertex.tangent[3] = result.w;
+        unpackedVertex.T[0] = result.x;
+        unpackedVertex.T[1] = result.y;
+        unpackedVertex.T[2] = result.z;
+        unpackedVertex.T[3] = result.w;
         unpackedVertex.curvature =  float(curvatures[j] / curvatureWeights[j]);
 
         utils::Vertex& vertex = scene.vertices[mesh.vertexOffset + j];
-        vertex.tangent = Packed::uf4_to_uint<10, 10, 10, 2>(result * 0.5f + 0.5f);
+        vertex.T = Packing::float4_to_unorm<10, 10, 10, 2>(result * 0.5f + 0.5f);
     }
 }
 
@@ -550,7 +535,7 @@ static void PostProcessTexture(const std::string &name, Texture& texture, bool c
         float4 avgColor = float4::Zero();
         const size_t pixelNum = lastMip->width * lastMip->height;
         for (size_t i = 0; i < pixelNum; i++)
-            avgColor += Packed::uint_to_uf4<8, 8, 8, 8>(*(uint32_t*)(rgba8 + i * 4));
+            avgColor += Packing::unorm_to_float4<8, 8, 8, 8>(*(uint32_t*)(rgba8 + i * 4));
         avgColor /= float(pixelNum);
 
         if (texture.alphaMode != AlphaMode::PREMULTIPLIED && avgColor.w < 254.0f / 255.0f)
@@ -739,31 +724,31 @@ static const cgltf_image* ParseDdsImage(const cgltf_texture* texture, const cglt
 
 void DecomposeAffine(const float4x4& transform, float3& translation, float4& rotation, float3& scale)
 {
-    translation = transform.col3;
+    translation = transform.col3.xyz;
 
     float3 col0 = transform.col0;
     float3 col1 = transform.col1;
     float3 col2 = transform.col2;
 
-    scale.x = Length(col0);
-    scale.y = Length(col1);
-    scale.z = Length(col2);
+    scale.x = length(col0);
+    scale.y = length(col1);
+    scale.z = length(col2);
     if (scale.x > 0.f) col0 /= scale.x;
     if (scale.y > 0.f) col1 /= scale.y;
     if (scale.z > 0.f) col2 /= scale.z;
 
-    float3 zAxis = Cross(col0, col1);
-    if (Dot33(zAxis, col2) < 0.0f)
+    float3 zAxis = cross(col0, col1);
+    if (dot(zAxis, col2) < 0.0f)
     {
         scale.x = -scale.x;
         col0 = -col0;
     }
 
     // https://www.euclideanspace.com/maths/geometry/rotations/conversions/matrixToQuaternion/
-    rotation.w = Sqrt(Max(0.0f, 1.0f + col0.x + col1.y + col2.z)) * 0.5f;
-    rotation.x = Sqrt(Max(0.0f, 1.0f + col0.x - col1.y - col2.z)) * 0.5f;
-    rotation.y = Sqrt(Max(0.0f, 1.0f - col0.x + col1.y - col2.z)) * 0.5f;
-    rotation.z = Sqrt(Max(0.0f, 1.0f - col0.x - col1.y + col2.z)) * 0.5f;
+    rotation.w = sqrt(max(0.0f, 1.0f + col0.x + col1.y + col2.z)) * 0.5f;
+    rotation.x = sqrt(max(0.0f, 1.0f + col0.x - col1.y - col2.z)) * 0.5f;
+    rotation.y = sqrt(max(0.0f, 1.0f - col0.x + col1.y - col2.z)) * 0.5f;
+    rotation.z = sqrt(max(0.0f, 1.0f - col0.x - col1.y + col2.z)) * 0.5f;
     rotation.x = std::copysign(rotation.x, col2.y - col1.z);
     rotation.y = std::copysign(rotation.y, col0.z - col2.x);
     rotation.z = std::copysign(rotation.z, col1.x - col0.y);
@@ -1033,14 +1018,14 @@ bool utils::LoadScene(const std::string& path, Scene& scene, bool allowUpdate)
                     float3 position((const float*)positionSrc);
 
                     UnpackedVertex& unpackedVertex = scene.unpackedVertices[mesh.vertexOffset + v_idx];
-                    unpackedVertex.position[0] = position.x;
-                    unpackedVertex.position[1] = position.y;
-                    unpackedVertex.position[2] = position.z;
+                    unpackedVertex.pos[0] = position.x;
+                    unpackedVertex.pos[1] = position.y;
+                    unpackedVertex.pos[2] = position.z;
 
                     Vertex& vertex = scene.vertices[mesh.vertexOffset + v_idx];
-                    vertex.position[0] = position.x;
-                    vertex.position[1] = position.y;
-                    vertex.position[2] = position.z;
+                    vertex.pos[0] = position.x;
+                    vertex.pos[1] = position.y;
+                    vertex.pos[2] = position.z;
 
                     mesh.aabb.Add(position);
 
@@ -1059,12 +1044,12 @@ bool utils::LoadScene(const std::string& path, Scene& scene, bool allowUpdate)
                     float3 normal((const float*)normalSrc);
 
                     UnpackedVertex& unpackedVertex = scene.unpackedVertices[mesh.vertexOffset + v_idx];
-                    unpackedVertex.normal[0] = normal.x;
-                    unpackedVertex.normal[1] = normal.y;
-                    unpackedVertex.normal[2] = normal.z;
+                    unpackedVertex.N[0] = normal.x;
+                    unpackedVertex.N[1] = normal.y;
+                    unpackedVertex.N[2] = normal.z;
 
                     Vertex& vertex = scene.vertices[mesh.vertexOffset + v_idx];
-                    vertex.normal = Packed::uf4_to_uint<10, 10, 10, 2>(normal * 0.5f + 0.5f);
+                    vertex.N = Packing::float4_to_unorm<10, 10, 10, 2>(float4(normal * 0.5f + 0.5f, 0.0f));
 
                     normalSrc += normalStride;
                 }
@@ -1080,15 +1065,15 @@ bool utils::LoadScene(const std::string& path, Scene& scene, bool allowUpdate)
                 {
                     const float* uv = (const float*)texcoordSrc;
 
-                    float u = Min(uv[0], 65504.0f);
-                    float v = Min(uv[1], 65504.0f);
+                    float u = min(uv[0], 65504.0f);
+                    float v = min(uv[1], 65504.0f);
 
                     UnpackedVertex& unpackedVertex = scene.unpackedVertices[mesh.vertexOffset + v_idx];
                     unpackedVertex.uv[0] = u;
                     unpackedVertex.uv[1] = v;
 
                     Vertex& vertex = scene.vertices[mesh.vertexOffset + v_idx];
-                    vertex.uv = Packed::sf2_to_h2(u, v);
+                    vertex.uv = Packing::float2_to_float16_t2( float2(u, v) );
 
                     texcoordSrc += texcoordStride;
                 }
@@ -1102,7 +1087,7 @@ bool utils::LoadScene(const std::string& path, Scene& scene, bool allowUpdate)
                     unpackedVertex.uv[1] = 0.0f;
 
                     Vertex& vertex = scene.vertices[mesh.vertexOffset + v_idx];
-                    vertex.uv = 0;
+                    vertex.uv.xy = 0;
                 }
             }
 
@@ -1227,7 +1212,7 @@ bool utils::LoadScene(const std::string& path, Scene& scene, bool allowUpdate)
         if (node->mesh)
         {
             float4x4 transform = worldTransform;
-            double3 position = ToDouble(transform.GetCol3().To3d());
+            double3 position = double3(float3(transform[3].xyz));
             transform.SetTranslation( float3::Zero() );
 
             size_t meshIndex = node->mesh - objects->meshes;
@@ -1350,7 +1335,7 @@ bool utils::LoadScene(const std::string& path, Scene& scene, bool allowUpdate)
             {
                 cgltf_animation_sampler* animSampler = gltfAnim->samplers + samplerIndex;
                 float animTimeMaxSec = animSampler->input->has_max ? animSampler->input->max[0] : 0.0f;
-                animationTotalSec = Max(animationTotalSec, animTimeMaxSec);
+                animationTotalSec = max(animationTotalSec, animTimeMaxSec);
             }
             animation.animationTimeSec = animationTotalSec;
             animation.durationMs = animationTotalSec * 1000.0f;
@@ -1686,6 +1671,7 @@ bool utils::LoadScene(const std::string& path, Scene& scene, bool allowUpdate)
         const Texture* diffuseTexture = scene.textures[material.baseColorTexIndex];
         material.alphaMode = useTransmission ? AlphaMode::TRANSPARENT : diffuseTexture->alphaMode;
         material.isHair = strstr(gltfMaterial.name, "hair") != 0;
+        material.isLeaf = strstr(gltfMaterial.name, "Foliage") != 0;
 
         // TODO: remove strange polygon on the window in Kitchen scene
         if (strstr(gltfMaterial.name, "Material_295"))
@@ -1743,7 +1729,7 @@ void utils::Scene::Animate(float animationSpeed, float elapsedTime, float& anima
     if (t >= 1.0f || t < 0.0f)
     {
         animation.sign = -animation.sign;
-        t = Saturate(t);
+        t = saturate(t);
     }
 
     animationProgress = t * 100.0f;
@@ -1772,7 +1758,7 @@ void utils::Scene::Animate(float animationSpeed, float elapsedTime, float& anima
         track.activeValues.clear();
 
         uint32_t from = findKeyIndex(track.keys, animTimeSec);
-        uint32_t to = Min(track.frameCount - 1, from + 1);
+        uint32_t to = min(track.frameCount - 1, from + 1);
         float keyFrom = track.keys[from];
         float keyTo = track.keys[to];
         float time = animTimeSec < keyFrom ? keyFrom : (animTimeSec > keyTo ? keyTo : animTimeSec);
@@ -1819,14 +1805,14 @@ void utils::Scene::Animate(float animationSpeed, float elapsedTime, float& anima
 
                     if (fromTargetId < toTargetId)
                     {
-                        float interpWeight = Lerp(fromWeight, 0.f, factor);
+                        float interpWeight = lerp(fromWeight, 0.f, factor);
                         totalWeight += interpWeight;
                         track.activeValues.emplace_back(fromTargetId, interpWeight);
                         fromIndex++;
                     }
                     else if (toTargetId < fromTargetId)
                     {
-                        float interpWeight = Lerp(0.f, toWeight, factor);
+                        float interpWeight = lerp(0.f, toWeight, factor);
                         totalWeight += interpWeight;
                         track.activeValues.emplace_back(toTargetId, interpWeight);
 
@@ -1834,7 +1820,7 @@ void utils::Scene::Animate(float animationSpeed, float elapsedTime, float& anima
                     }
                     else //if (fromTargetId == toTargetId)
                     {
-                        float interpWeight = Lerp(fromWeight, toWeight, factor);
+                        float interpWeight = lerp(fromWeight, toWeight, factor);
                         totalWeight += interpWeight;
                         track.activeValues.emplace_back(fromTargetId, interpWeight);
                         fromIndex++;
@@ -1860,7 +1846,7 @@ void utils::Scene::Animate(float animationSpeed, float elapsedTime, float& anima
     for (auto& track : animation.positionTracks)
     {
         uint32_t from = findKeyIndex(track.keys, animTimeSec);
-        uint32_t to = Min(track.frameCount - 1, from + 1);
+        uint32_t to = min(track.frameCount - 1, from + 1);
         float keyFrom = track.keys[from];
         float keyTo = track.keys[to];
         float time = animTimeSec < keyFrom ? keyFrom : (animTimeSec > keyTo ? keyTo : animTimeSec);
@@ -1878,7 +1864,7 @@ void utils::Scene::Animate(float animationSpeed, float elapsedTime, float& anima
             case AnimationTrackType::CubicSpline: //TODO implement CubicSpline
             case AnimationTrackType::Linear:
             {
-                value = Lerp(track.values[from], track.values[to], float3(factor));
+                value = lerp(track.values[from], track.values[to], float3(factor));
             }
             break;
         }
@@ -1889,7 +1875,7 @@ void utils::Scene::Animate(float animationSpeed, float elapsedTime, float& anima
     for (auto& track : animation.rotationTracks)
     {
         uint32_t from = findKeyIndex(track.keys, animTimeSec);
-        uint32_t to = Min(track.frameCount - 1, from + 1);
+        uint32_t to = min(track.frameCount - 1, from + 1);
         float keyFrom = track.keys[from];
         float keyTo = track.keys[to];
         float time = animTimeSec < keyFrom ? keyFrom : (animTimeSec > keyTo ? keyTo : animTimeSec);
@@ -1909,7 +1895,7 @@ void utils::Scene::Animate(float animationSpeed, float elapsedTime, float& anima
             {
                 float4 a = track.values[from];
                 float4 b = track.values[to];
-                float theta = Dot44(a, b);
+                float theta = dot(a, b);
                 a = (theta < 0.0f) ? -a : a;
                 value = Slerp(a, b, factor);
             }
@@ -1922,7 +1908,7 @@ void utils::Scene::Animate(float animationSpeed, float elapsedTime, float& anima
     for (auto& track : animation.scaleTracks)
     {
         uint32_t from = findKeyIndex(track.keys, animTimeSec);
-        uint32_t to = Min(track.frameCount - 1, from + 1);
+        uint32_t to = min(track.frameCount - 1, from + 1);
         float keyFrom = track.keys[from];
         float keyTo = track.keys[to];
         float time = animTimeSec < keyFrom ? keyFrom : (animTimeSec > keyTo ? keyTo : animTimeSec);
@@ -1937,7 +1923,7 @@ void utils::Scene::Animate(float animationSpeed, float elapsedTime, float& anima
 
             case AnimationTrackType::CubicSpline: //TODO implement CubicSpline
             case AnimationTrackType::Linear:
-                value = Lerp(track.values[from], track.values[to], float3(factor));
+                value = lerp(track.values[from], track.values[to], float3(factor));
                 break;
         }
 
@@ -1957,7 +1943,7 @@ void utils::Scene::Animate(float animationSpeed, float elapsedTime, float& anima
         sceneNode->worldTransform = sceneNode->parent ? (sceneNode->parent->worldTransform * sceneNode->localTransform) : (mSceneToWorld * sceneNode->localTransform);
 
         float4x4 transform = sceneNode->worldTransform;
-        double3 position = ToDouble(transform.GetCol3().To3d());
+        double3 position = double3(float3(transform[3].xyz));
         transform.SetTranslation(float3::Zero());
 
         for (auto instanceIndex : sceneNode->instances)

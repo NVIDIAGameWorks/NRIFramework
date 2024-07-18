@@ -19,7 +19,6 @@
     #include <csignal>
 #endif
 
-#include <array>
 #include <thread>
 
 template<typename T> constexpr void MaybeUnused([[maybe_unused]] const T& arg)
@@ -579,7 +578,7 @@ void SampleBase::EndUI(const nri::StreamerInterface& streamerInterface, nri::Str
             ImDrawVertOpt opt;
             opt.pos[0] = v->pos.x;
             opt.pos[1] = v->pos.y;
-            opt.uv = Packed::uf2_to_uint1616(v->uv.x, v->uv.y);
+            opt.uv = Packing::float2_to_unorm_16_16(float2(v->uv.x, v->uv.y));
             opt.col = v->col;
 
             memcpy(vertexData++, &opt, sizeof(opt));
@@ -700,19 +699,19 @@ bool SampleBase::Create(int32_t argc, char** argv, const char* windowTitle)
         printf("DPI scale %.1f%% (%s)\n", contentScale * 100.0f, m_DpiMode == 2 ? "quality" : "performance");
     }
 
-    m_WindowResolution.x = (uint32_t)Floor(m_OutputResolution.x * contentScale);
-    m_WindowResolution.y = (uint32_t)Floor(m_OutputResolution.y * contentScale);
+    m_WindowResolution.x = (uint32_t)floor(m_OutputResolution.x * contentScale);
+    m_WindowResolution.y = (uint32_t)floor(m_OutputResolution.y * contentScale);
 
     const GLFWvidmode* vidmode = glfwGetVideoMode(monitor);
     const uint32_t screenW = (uint32_t)vidmode->width;
     const uint32_t screenH = (uint32_t)vidmode->height;
 
-    m_WindowResolution.x = Min(m_WindowResolution.x, screenW);
-    m_WindowResolution.y = Min(m_WindowResolution.y, screenH);
+    m_WindowResolution.x = min(m_WindowResolution.x, screenW);
+    m_WindowResolution.y = min(m_WindowResolution.y, screenH);
 
     // Rendering output size
-    m_OutputResolution.x = Min(m_OutputResolution.x, m_WindowResolution.x);
-    m_OutputResolution.y = Min(m_OutputResolution.y, m_WindowResolution.y);
+    m_OutputResolution.x = min(m_OutputResolution.x, m_WindowResolution.x);
+    m_OutputResolution.y = min(m_OutputResolution.y, m_WindowResolution.y);
 
     if (m_DpiMode == 2)
         m_OutputResolution = m_WindowResolution;

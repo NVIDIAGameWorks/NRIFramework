@@ -7,14 +7,14 @@
 #define NRI_FRAMEWORK_VERSION_DATE "19 March 2024"
 #define NRI_FRAMEWORK 1
 
+#include <vector>
+#include <array>
+#include <string>
+
 // 3rd party
 #define GLFW_INCLUDE_NONE
 #include "Glfw/include/GLFW/glfw3.h"
-#include "Imgui/imgui.h"
-
-// Dependencies
-#include "MathLib/MathLib.h"
-#include "Timer.h"
+#include "ImGui/imgui.h"
 
 // NRI: core & common extensions
 #include "NRI.h"
@@ -23,12 +23,18 @@
 #include "Extensions/NRIStreamer.h"
 #include "Extensions/NRISwapChain.h"
 
-// NRI framework
-#include "Camera.h"
+// 3rd party
 #include "CmdLine.h" // https://github.com/tanakh/cmdline
-#include "Controls.h"
+
+#include "MathLib/ml.h"
+#include "MathLib/ml.hlsli"
+
+// NRI framework
 #include "Helper.h"
 #include "Utils.h"
+#include "Camera.h"
+#include "Controls.h"
+#include "Timer.h"
 
 // Settings
 constexpr nri::SPIRVBindingOffsets SPIRV_BINDING_OFFSETS = {100, 200, 300, 400}; // just ShaderMake defaults for simplicity
@@ -117,7 +123,6 @@ public:
 protected:
     nri::MemoryAllocatorInterface m_MemoryAllocatorInterface = {};
     std::string m_SceneFile = "ShaderBalls/ShaderBalls.gltf";
-    sFastRand m_FastRandState = {};
     GLFWwindow* m_Window = nullptr;
     Camera m_Camera;
     Timer m_Timer;
@@ -125,6 +130,7 @@ protected:
     uint2 m_WindowResolution = {};
     uint8_t m_VsyncInterval = 0;
     uint32_t m_DpiMode = 0;
+    uint32_t m_RngState = 0;
     float m_MouseSensitivity = 1.0f;
     bool m_DebugAPI = false;
     bool m_DebugNRI = false;

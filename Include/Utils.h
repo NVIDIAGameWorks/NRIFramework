@@ -2,9 +2,6 @@
 
 #pragma once
 
-#include <string>
-#include <vector>
-
 #undef OPAQUE
 #undef TRANSPARENT
 
@@ -112,6 +109,7 @@ namespace utils
         uint32_t emissiveTexIndex = StaticTexture::Black;
         AlphaMode alphaMode = AlphaMode::OPAQUE;
         bool isHair;
+        bool isLeaf;
 
         inline bool IsOpaque() const
         { return alphaMode == AlphaMode::OPAQUE; }
@@ -127,9 +125,6 @@ namespace utils
 
         inline bool IsEmissive() const
         { return emissiveTexIndex != StaticTexture::Black && (emissiveAndRoughnessScale.x != 0.0f || emissiveAndRoughnessScale.y != 0.0f || emissiveAndRoughnessScale.z != 0.0f); }
-
-        inline bool IsHair() const
-        { return isHair; }
     };
 
     struct Instance
@@ -173,25 +168,25 @@ namespace utils
 
     struct Vertex
     {
-        float position[3];
-        uint32_t uv; // half float
-        uint32_t normal; // 10 10 10 2 unorm
-        uint32_t tangent; // 10 10 10 2 unorm (.w - handedness)
+        float pos[3];
+        float16_t2 uv;
+        uint32_t N; // 10 10 10 2 unorm
+        uint32_t T; // 10 10 10 2 unorm (.w - handedness)
     };
 
     struct MorphVertex
     {
-        uint32_t position[2];
-        uint32_t normal;
-        uint32_t tangent;
+        float16_t4 pos;
+        float16_t2 N;
+        float16_t2 T;
     };
 
     struct UnpackedVertex
     {
-        float position[3];
+        float pos[3];
         float uv[2];
-        float normal[3];
-        float tangent[4];
+        float N[3];
+        float T[4];
         float curvature;
     };
 
@@ -257,7 +252,7 @@ namespace utils
         std::vector<QuatAnimationTrack> rotationTracks;
         std::vector<VectorAnimationTrack> scaleTracks;
         std::vector<WeightsAnimationTrack> weightTracks;
-	std::vector<WeightTrackMorphMeshIndex> morphMeshInstances;
+	    std::vector<WeightTrackMorphMeshIndex> morphMeshInstances;
         std::string name;
         float durationMs = 0.0f;
         float animationProgress = 0.0f;

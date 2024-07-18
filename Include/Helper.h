@@ -2,9 +2,6 @@
 
 #pragma once
 
-#include <vector>
-#include <array>
-
 namespace helper
 {
     template<typename T, typename A> constexpr T Align(T x, A alignment)

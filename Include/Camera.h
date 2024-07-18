@@ -53,7 +53,7 @@ public:
     {
         double3 position = m_IsRelative ? state.globalPosition : double3(0.0);
 
-        return ToFloat(origin - position);
+        return float3(origin - position);
     }
 
     inline void* GetState()

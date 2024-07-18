@@ -66,7 +66,7 @@ target_compile_definitions (detex PRIVATE ${COMPILE_DEFINITIONS})
 set_property (TARGET detex PROPERTY FOLDER "${PROJECT_NAME}/External")
 
 # External/MathLib
-file (READ "${CMAKE_CURRENT_SOURCE_DIR}/External/MathLib/MathLib.h" ver_h)
+file (READ "${CMAKE_CURRENT_SOURCE_DIR}/External/MathLib/ml.h" ver_h)
 string (REGEX MATCH "ML_VERSION_MAJOR ([0-9]*)" _ ${ver_h})
 set (ML_VERSION_MAJOR ${CMAKE_MATCH_1})
 string (REGEX MATCH "ML_VERSION_MINOR ([0-9]*)" _ ${ver_h})
@@ -140,6 +140,7 @@ set (SHADERMAKE_GENERAL_ARGS
     -o "${NRIF_SHADERS_PATH}"
     -I "External/NRI/Include"
     -I "External/MathLib"
+    --sRegShift 100 --tRegShift 200 --bRegShift 300 --uRegShift 400
 )
 
 if (WIN32)

@@ -1,7 +1,7 @@
 // © 2021 NVIDIA Corporation
 
 #include "NRICompatibility.hlsli"
-#include "STL.hlsli"
+#include "ml.hlsli"
 
 struct PushConstants
 {
@@ -28,7 +28,7 @@ float4 main( PS_INPUT input ) : SV_Target
     color.w *= texture0.Sample( sampler0, input.uv );
 
     if( g_PushConstants.gIsSrgb == 0.0 )
-        color.xyz = STL::Color::FromSrgb( color.xyz );
+        color.xyz = Color::FromSrgb( color.xyz );
 
     color.xyz *= g_PushConstants.gSdrScale;
 
