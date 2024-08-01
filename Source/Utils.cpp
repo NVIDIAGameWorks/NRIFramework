@@ -1670,7 +1670,7 @@ bool utils::LoadScene(const std::string& path, Scene& scene, bool allowUpdate)
 
         const Texture* diffuseTexture = scene.textures[material.baseColorTexIndex];
         material.alphaMode = useTransmission ? AlphaMode::TRANSPARENT : diffuseTexture->alphaMode;
-        material.isHair = strstr(gltfMaterial.name, "hair") != 0;
+        material.isHair = strstr(gltfMaterial.name, "_hair") != 0;
         material.isLeaf = strstr(gltfMaterial.name, "Foliage") != 0;
 
         // TODO: remove strange polygon on the window in Kitchen scene
