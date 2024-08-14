@@ -1087,7 +1087,8 @@ bool utils::LoadScene(const std::string& path, Scene& scene, bool allowUpdate)
                     unpackedVertex.uv[1] = 0.0f;
 
                     Vertex& vertex = scene.vertices[mesh.vertexOffset + v_idx];
-                    vertex.uv.xy = 0;
+                    vertex.uv.x = 0;
+                    vertex.uv.y = 0;
                 }
             }
 
@@ -1527,7 +1528,7 @@ bool utils::LoadScene(const std::string& path, Scene& scene, bool allowUpdate)
             scene.textures.push_back(texture);
         }
 
-        // StaticTexture::ScramblingRanking4spp
+        // StaticTexture::ScramblingRanking
         {
             Texture* texture = new Texture;
             const std::string& texPath = GetFullPath("scrambling_ranking_128x128_2d_4spp.png", DataFolder::TEXTURES);

@@ -753,7 +753,7 @@ bool SampleBase::Create(int32_t argc, char** argv, const char* windowTitle)
     // Main initialization
     printf("Loading...\n");
 
-    nri::GraphicsAPI graphicsAPI = nri::GraphicsAPI::VULKAN;
+    nri::GraphicsAPI graphicsAPI = nri::GraphicsAPI::VK;
     if (cmdLine.get<std::string>("api") == "D3D11")
         graphicsAPI = nri::GraphicsAPI::D3D11;
     else if (cmdLine.get<std::string>("api") == "D3D12")
