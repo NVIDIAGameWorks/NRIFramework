@@ -24,8 +24,8 @@
 template<typename T> constexpr void MaybeUnused([[maybe_unused]] const T& arg)
 {}
 
-void CreateDebugAllocator(nri::MemoryAllocatorInterface& memoryAllocatorInterface);
-void DestroyDebugAllocator(nri::MemoryAllocatorInterface& memoryAllocatorInterface);
+void CreateDebugAllocator(nri::AllocationCallbacks& allocationCallbacks);
+void DestroyDebugAllocator(nri::AllocationCallbacks& allocationCallbacks);
 
 //==================================================================================================================================================
 // MEMORY
@@ -143,7 +143,7 @@ static void GLFW_ScrollCallback(GLFWwindow* window, double xoffset, double yoffs
 SampleBase::SampleBase()
 {
 #if _DEBUG
-    CreateDebugAllocator(m_MemoryAllocatorInterface);
+    CreateDebugAllocator(m_AllocationCallbacks);
 #endif
 }
 
@@ -152,8 +152,8 @@ SampleBase::~SampleBase()
     glfwTerminate();
 
 #if _DEBUG
-    if (m_MemoryAllocatorInterface.userArg != nullptr)
-        DestroyDebugAllocator(m_MemoryAllocatorInterface);
+    if (m_AllocationCallbacks.userArg != nullptr)
+        DestroyDebugAllocator(m_AllocationCallbacks);
 #endif
 }
 

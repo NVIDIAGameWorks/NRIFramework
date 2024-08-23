@@ -117,18 +117,18 @@ static void DebugAlignedFree(void* userArg, void* memory)
     free((uint8_t*)memory - header->offset);
 }
 
-void CreateDebugAllocator(nri::MemoryAllocatorInterface& memoryAllocatorInterface)
+void CreateDebugAllocator(nri::AllocationCallbacks& allocationCallbacks)
 {
-    memoryAllocatorInterface = {};
-    memoryAllocatorInterface.userArg = new DebugAllocator();
-    memoryAllocatorInterface.Allocate = DebugAlignedMalloc;
-    memoryAllocatorInterface.Reallocate = DebugAlignedRealloc;
-    memoryAllocatorInterface.Free = DebugAlignedFree;
+    allocationCallbacks = {};
+    allocationCallbacks.userArg = new DebugAllocator();
+    allocationCallbacks.Allocate = DebugAlignedMalloc;
+    allocationCallbacks.Reallocate = DebugAlignedRealloc;
+    allocationCallbacks.Free = DebugAlignedFree;
 }
 
-void DestroyDebugAllocator(nri::MemoryAllocatorInterface& memoryAllocatorInterface)
+void DestroyDebugAllocator(nri::AllocationCallbacks& allocationCallbacks)
 {
-    DebugAllocator* debugAllocator = (DebugAllocator*)memoryAllocatorInterface.userArg;
+    DebugAllocator* debugAllocator = (DebugAllocator*)allocationCallbacks.userArg;
 
     if (debugAllocator->allocatedSize.load(std::memory_order_relaxed) != 0)
         ReportAllocatorError("DestroyDebugAllocator() failed: allocatedSize is not 0.\n");

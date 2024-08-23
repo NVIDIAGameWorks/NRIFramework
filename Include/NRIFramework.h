@@ -121,7 +121,7 @@ public:
     static void EnableMemoryLeakDetection(uint32_t breakOnAllocationIndex);
 
 protected:
-    nri::MemoryAllocatorInterface m_MemoryAllocatorInterface = {};
+    nri::AllocationCallbacks m_AllocationCallbacks = {};
     std::string m_SceneFile = "ShaderBalls/ShaderBalls.gltf";
     GLFWwindow* m_Window = nullptr;
     Camera m_Camera;
