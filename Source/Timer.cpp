@@ -3,23 +3,22 @@
 #include <math.h>
 
 #if defined(_WIN32)
-    #include <windows.h>
+#    include <windows.h>
 #elif defined(__linux__) || defined(__SCE__) || defined(__APPLE__)
-    #include <time.h>
-    #ifdef USE_MONOTONIC_TIMER
-        constexpr clockid_t CLOCKID = CLOCK_MONOTONIC;
-    #else
-        constexpr clockid_t CLOCKID = CLOCK_REALTIME;
-    #endif
+#    include <time.h>
+#    ifdef USE_MONOTONIC_TIMER
+constexpr clockid_t CLOCKID = CLOCK_MONOTONIC;
+#    else
+constexpr clockid_t CLOCKID = CLOCK_REALTIME;
+#    endif
 #else
-    #error "Undefined platform"
+#    error "Undefined platform"
 #endif
 
-#define MY_MIN( a, b )   ( a < b ? a : b )
-#define MY_MAX( a, b )   ( a > b ? a : b )
+#define MY_MIN(a, b) (a < b ? a : b)
+#define MY_MAX(a, b) (a > b ? a : b)
 
-inline uint64_t _GetTicks()
-{
+inline uint64_t _GetTicks() {
 #if defined(_WIN32)
     uint64_t ticks;
     QueryPerformanceCounter((LARGE_INTEGER*)&ticks);
@@ -31,8 +30,7 @@ inline uint64_t _GetTicks()
 #endif
 }
 
-Timer::Timer()
-{
+Timer::Timer() {
 #if defined(_WIN32)
     uint64_t ticksPerSecond = 1;
     QueryPerformanceFrequency((LARGE_INTEGER*)&ticksPerSecond);
@@ -43,10 +41,8 @@ Timer::Timer()
 #endif
 }
 
-void Timer::UpdateFrameTime()
-{
-    if (m_Time != 0)
-    {
+void Timer::UpdateFrameTime() {
+    if (m_Time != 0) {
         double ms = (_GetTicks() - m_Time) * m_InvTicksPerMs;
         m_Delta = float(ms);
 
@@ -60,5 +56,6 @@ void Timer::UpdateFrameTime()
     m_Time = _GetTicks();
 }
 
-double Timer::GetTimeStamp() const
-{ return _GetTicks() * m_InvTicksPerMs; }
+double Timer::GetTimeStamp() const {
+    return _GetTicks() * m_InvTicksPerMs;
+}

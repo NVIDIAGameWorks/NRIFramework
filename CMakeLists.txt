@@ -100,7 +100,7 @@ endif ()
 # NRIFramework
 file (GLOB FRAMEWORK_SOURCE "Source/*.cpp" "Source/*.h")
 source_group ("Source" FILES ${FRAMEWORK_SOURCE})
-file (GLOB FRAMEWORK_HEADERS "Include/*.hpp" "Include/*.h")
+file (GLOB FRAMEWORK_HEADERS "Include/*.hpp" "Include/*.h" "External/Cgltf/cgltf.h")
 source_group ("Include" FILES ${FRAMEWORK_HEADERS})
 add_library (${PROJECT_NAME} STATIC ${FRAMEWORK_SOURCE} ${FRAMEWORK_HEADERS} ${ML_HEADERS})
 target_link_libraries (${PROJECT_NAME} PRIVATE imgui detex glfw)

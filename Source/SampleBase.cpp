@@ -4,25 +4,26 @@
 // #include "NRIAgilitySDK.h"
 
 #if defined _WIN32
-    #define GLFW_EXPOSE_NATIVE_WIN32
+#    define GLFW_EXPOSE_NATIVE_WIN32
 #elif defined __linux__
-    #define GLFW_EXPOSE_NATIVE_X11
+#    define GLFW_EXPOSE_NATIVE_X11
 #elif defined __APPLE__
-    #define GLFW_EXPOSE_NATIVE_COCOA
-    #include "MetalUtility/MetalUtility.h"
+#    define GLFW_EXPOSE_NATIVE_COCOA
+#    include "MetalUtility/MetalUtility.h"
 #else
-    #error "Unknown platform"
+#    error "Unknown platform"
 #endif
 #include "Glfw/include/GLFW/glfw3native.h"
 
 #if defined(__linux__) || defined(__APPLE__)
-    #include <csignal>
+#    include <csignal>
 #endif
 
 #include <thread>
 
-template<typename T> constexpr void MaybeUnused([[maybe_unused]] const T& arg)
-{}
+template <typename T>
+constexpr void MaybeUnused([[maybe_unused]] const T& arg) {
+}
 
 void CreateDebugAllocator(nri::AllocationCallbacks& allocationCallbacks);
 void DestroyDebugAllocator(nri::AllocationCallbacks& allocationCallbacks);
@@ -33,23 +34,19 @@ void DestroyDebugAllocator(nri::AllocationCallbacks& allocationCallbacks);
 
 #if _WIN32
 
-void* __CRTDECL operator new(size_t size)
-{
+void* __CRTDECL operator new(size_t size) {
     return _aligned_malloc(size, DEFAULT_MEMORY_ALIGNMENT);
 }
 
-void* __CRTDECL operator new[](size_t size)
-{
+void* __CRTDECL operator new[](size_t size) {
     return _aligned_malloc(size, DEFAULT_MEMORY_ALIGNMENT);
 }
 
-void __CRTDECL operator delete(void* p) noexcept
-{
+void __CRTDECL operator delete(void* p) noexcept {
     _aligned_free(p);
 }
 
-void __CRTDECL operator delete[](void* p) noexcept
-{
+void __CRTDECL operator delete[](void* p) noexcept {
     _aligned_free(p);
 }
 
@@ -59,8 +56,7 @@ void __CRTDECL operator delete[](void* p) noexcept
 // GLFW CALLBACKS
 //==================================================================================================================================================
 
-static void GLFW_ErrorCallback(int32_t error, const char* message)
-{
+static void GLFW_ErrorCallback(int32_t error, const char* message) {
     printf("GLFW error[%d]: %s\n", error, message);
 #if _WIN32
     DebugBreak();
@@ -69,22 +65,20 @@ static void GLFW_ErrorCallback(int32_t error, const char* message)
 #endif
 }
 
-static void GLFW_KeyCallback(GLFWwindow* window, int32_t key, int32_t scancode, int32_t action, int32_t mods)
-{
+static void GLFW_KeyCallback(GLFWwindow* window, int32_t key, int32_t scancode, int32_t action, int32_t mods) {
     MaybeUnused(scancode);
     MaybeUnused(mods);
 
     SampleBase* p = (SampleBase*)glfwGetWindowUserPointer(window);
 
-    if( key < 0 )
+    if (key < 0)
         return;
 
     p->m_KeyState[key] = action != GLFW_RELEASE;
     if (action != GLFW_RELEASE)
         p->m_KeyToggled[key] = true;
 
-    if (p->HasUserInterface())
-    {
+    if (p->HasUserInterface()) {
         ImGuiIO& io = ImGui::GetIO();
         if (action == GLFW_PRESS)
             io.KeysDown[key] = true;
@@ -93,19 +87,16 @@ static void GLFW_KeyCallback(GLFWwindow* window, int32_t key, int32_t scancode, 
     }
 }
 
-static void GLFW_CharCallback(GLFWwindow* window, uint32_t codepoint)
-{
+static void GLFW_CharCallback(GLFWwindow* window, uint32_t codepoint) {
     SampleBase* p = (SampleBase*)glfwGetWindowUserPointer(window);
 
-    if (p->HasUserInterface())
-    {
+    if (p->HasUserInterface()) {
         ImGuiIO& io = ImGui::GetIO();
         io.AddInputCharacter(codepoint);
     }
 }
 
-static void GLFW_ButtonCallback(GLFWwindow* window, int32_t button, int32_t action, int32_t mods)
-{
+static void GLFW_ButtonCallback(GLFWwindow* window, int32_t button, int32_t action, int32_t mods) {
     MaybeUnused(mods);
 
     SampleBase* p = (SampleBase*)glfwGetWindowUserPointer(window);
@@ -114,22 +105,19 @@ static void GLFW_ButtonCallback(GLFWwindow* window, int32_t button, int32_t acti
     p->m_ButtonJustPressed[button] = action != GLFW_RELEASE;
 }
 
-static void GLFW_CursorPosCallback(GLFWwindow* window, double x, double y)
-{
+static void GLFW_CursorPosCallback(GLFWwindow* window, double x, double y) {
     SampleBase* p = (SampleBase*)glfwGetWindowUserPointer(window);
 
     float2 curPos = float2(float(x), float(y));
     p->m_MouseDelta = curPos - p->m_MousePosPrev;
 }
 
-static void GLFW_ScrollCallback(GLFWwindow* window, double xoffset, double yoffset)
-{
+static void GLFW_ScrollCallback(GLFWwindow* window, double xoffset, double yoffset) {
     SampleBase* p = (SampleBase*)glfwGetWindowUserPointer(window);
 
     p->m_MouseWheel = (float)yoffset;
 
-    if (p->HasUserInterface())
-    {
+    if (p->HasUserInterface()) {
         ImGuiIO& io = ImGui::GetIO();
         io.MouseWheelH += (float)xoffset;
         io.MouseWheel += (float)yoffset;
@@ -140,15 +128,13 @@ static void GLFW_ScrollCallback(GLFWwindow* window, double xoffset, double yoffs
 // SAMPLE BASE
 //==================================================================================================================================================
 
-SampleBase::SampleBase()
-{
+SampleBase::SampleBase() {
 #if _DEBUG
     CreateDebugAllocator(m_AllocationCallbacks);
 #endif
 }
 
-SampleBase::~SampleBase()
-{
+SampleBase::~SampleBase() {
     glfwTerminate();
 
 #if _DEBUG
@@ -157,12 +143,10 @@ SampleBase::~SampleBase()
 #endif
 }
 
-void SampleBase::GetCameraDescFromInputDevices(CameraDesc& cameraDesc)
-{
+void SampleBase::GetCameraDescFromInputDevices(CameraDesc& cameraDesc) {
     cameraDesc.timeScale = 0.025f * m_Timer.GetSmoothedFrameTime();
 
-    if (!IsButtonPressed(Button::Right))
-    {
+    if (!IsButtonPressed(Button::Right)) {
         CursorMode(GLFW_CURSOR_NORMAL);
         return;
     }
@@ -204,23 +188,20 @@ void SampleBase::GetCameraDescFromInputDevices(CameraDesc& cameraDesc)
         cameraDesc.dLocal.y -= motionScale;
 }
 
-struct ImDrawVertOpt
-{
+struct ImDrawVertOpt {
     float pos[2];
     uint32_t uv;
     uint32_t col;
 };
 
-bool SampleBase::InitUI(const nri::CoreInterface& NRI, const nri::HelperInterface& helperInterface, nri::Device& device, nri::Format renderTargetFormat)
-{
+bool SampleBase::InitUI(const nri::CoreInterface& NRI, const nri::HelperInterface& helperInterface, nri::Device& device, nri::Format renderTargetFormat) {
     // ImGui setup
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
     ImGui::StyleColorsDark();
 
     float contentScale = 1.0f;
-    if (m_DpiMode != 0)
-    {
+    if (m_DpiMode != 0) {
         GLFWmonitor* monitor = glfwGetPrimaryMonitor();
 
         float unused;
@@ -234,7 +215,7 @@ bool SampleBase::InitUI(const nri::CoreInterface& NRI, const nri::HelperInterfac
 
     ImGuiIO& io = ImGui::GetIO();
     io.BackendFlags |= ImGuiBackendFlags_HasMouseCursors; // We can honor GetMouseCursor() values (optional)
-    io.BackendFlags |= ImGuiBackendFlags_HasSetMousePos; // We can honor io.WantSetMousePos requests (optional, rarely used)
+    io.BackendFlags |= ImGuiBackendFlags_HasSetMousePos;  // We can honor io.WantSetMousePos requests (optional, rarely used)
     io.IniFilename = nullptr;
     io.KeyMap[ImGuiKey_Tab] = GLFW_KEY_TAB;
     io.KeyMap[ImGuiKey_LeftArrow] = GLFW_KEY_LEFT;
@@ -261,19 +242,18 @@ bool SampleBase::InitUI(const nri::CoreInterface& NRI, const nri::HelperInterfac
 
     m_MouseCursors[ImGuiMouseCursor_Arrow] = glfwCreateStandardCursor(GLFW_ARROW_CURSOR);
     m_MouseCursors[ImGuiMouseCursor_TextInput] = glfwCreateStandardCursor(GLFW_IBEAM_CURSOR);
-    m_MouseCursors[ImGuiMouseCursor_ResizeAll] = glfwCreateStandardCursor(GLFW_ARROW_CURSOR);   // FIXME: GLFW doesn't have this.
+    m_MouseCursors[ImGuiMouseCursor_ResizeAll] = glfwCreateStandardCursor(GLFW_ARROW_CURSOR); // FIXME: GLFW doesn't have this.
     m_MouseCursors[ImGuiMouseCursor_ResizeNS] = glfwCreateStandardCursor(GLFW_VRESIZE_CURSOR);
     m_MouseCursors[ImGuiMouseCursor_ResizeEW] = glfwCreateStandardCursor(GLFW_HRESIZE_CURSOR);
-    m_MouseCursors[ImGuiMouseCursor_ResizeNESW] = glfwCreateStandardCursor(GLFW_ARROW_CURSOR);  // FIXME: GLFW doesn't have this.
-    m_MouseCursors[ImGuiMouseCursor_ResizeNWSE] = glfwCreateStandardCursor(GLFW_ARROW_CURSOR);  // FIXME: GLFW doesn't have this.
+    m_MouseCursors[ImGuiMouseCursor_ResizeNESW] = glfwCreateStandardCursor(GLFW_ARROW_CURSOR); // FIXME: GLFW doesn't have this.
+    m_MouseCursors[ImGuiMouseCursor_ResizeNWSE] = glfwCreateStandardCursor(GLFW_ARROW_CURSOR); // FIXME: GLFW doesn't have this.
     m_MouseCursors[ImGuiMouseCursor_Hand] = glfwCreateStandardCursor(GLFW_HAND_CURSOR);
 
     const nri::DeviceDesc& deviceDesc = NRI.GetDeviceDesc(device);
 
     // Pipeline
     {
-        nri::DescriptorRangeDesc descriptorRanges[] =
-        {
+        nri::DescriptorRangeDesc descriptorRanges[] = {
             {0, 1, nri::DescriptorType::TEXTURE, nri::StageBits::FRAGMENT_SHADER},
             {0, 1, nri::DescriptorType::SAMPLER, nri::StageBits::FRAGMENT_SHADER},
         };
@@ -296,8 +276,7 @@ bool SampleBase::InitUI(const nri::CoreInterface& NRI, const nri::HelperInterfac
             return false;
 
         utils::ShaderCodeStorage shaderCodeStorage;
-        nri::ShaderDesc shaders[] =
-        {
+        nri::ShaderDesc shaders[] = {
             utils::LoadShader(deviceDesc.graphicsAPI, "UI.vs", shaderCodeStorage),
             utils::LoadShader(deviceDesc.graphicsAPI, "UI.fs", shaderCodeStorage),
         };
@@ -383,7 +362,7 @@ bool SampleBase::InitUI(const nri::CoreInterface& NRI, const nri::HelperInterfac
     textureDesc.height = (uint16_t)fontHeight;
     textureDesc.depth = 1;
     textureDesc.mipNum = 1;
-    textureDesc.arraySize = 1;
+    textureDesc.layerNum = 1;
     textureDesc.sampleNum = 1;
     textureDesc.usageMask = nri::TextureUsageBits::SHADER_RESOURCE;
     if (NRI.CreateTexture(device, textureDesc, m_FontTexture) != nri::Result::SUCCESS)
@@ -421,7 +400,6 @@ bool SampleBase::InitUI(const nri::CoreInterface& NRI, const nri::HelperInterfac
     nri::CommandQueue* commandQueue = nullptr;
     NRI.GetCommandQueue(device, nri::CommandQueueType::GRAPHICS, commandQueue);
     {
-
         nri::TextureSubresourceUploadDesc subresource = {};
         texture.GetSubresource(subresource, 0);
 
@@ -450,11 +428,9 @@ bool SampleBase::InitUI(const nri::CoreInterface& NRI, const nri::HelperInterfac
         if (NRI.AllocateDescriptorSets(*m_DescriptorPool, *m_PipelineLayout, 0, &m_DescriptorSet, 1, 0) != nri::Result::SUCCESS)
             return false;
 
-        nri::DescriptorRangeUpdateDesc descriptorRangeUpdateDesc[] =
-        {
+        nri::DescriptorRangeUpdateDesc descriptorRangeUpdateDesc[] = {
             {&m_FontShaderResource, 1},
-            {&m_Sampler, 1}
-        };
+            {&m_Sampler, 1}};
 
         NRI.UpdateDescriptorRanges(*m_DescriptorSet, 0, helper::GetCountOf(descriptorRangeUpdateDesc), descriptorRangeUpdateDesc);
     }
@@ -464,8 +440,7 @@ bool SampleBase::InitUI(const nri::CoreInterface& NRI, const nri::HelperInterfac
     return true;
 }
 
-void SampleBase::DestroyUI(const nri::CoreInterface& NRI)
-{
+void SampleBase::DestroyUI(const nri::CoreInterface& NRI) {
     if (!HasUserInterface())
         return;
 
@@ -480,8 +455,7 @@ void SampleBase::DestroyUI(const nri::CoreInterface& NRI)
     NRI.FreeMemory(*m_FontTextureMemory);
 }
 
-void SampleBase::BeginUI()
-{
+void SampleBase::BeginUI() {
     if (!HasUserInterface())
         return;
 
@@ -500,20 +474,17 @@ void SampleBase::BeginUI()
     io.KeySuper = false;
 
     // Update buttons
-    for (int32_t i = 0; i < IM_ARRAYSIZE(io.MouseDown); i++)
-    {
+    for (int32_t i = 0; i < IM_ARRAYSIZE(io.MouseDown); i++) {
         // If a mouse press event came, always pass it as "mouse held this frame", so we don't miss click-release events that are shorter than 1 frame.
         io.MouseDown[i] = m_ButtonJustPressed[i] || glfwGetMouseButton(m_Window, i) != 0;
         m_ButtonJustPressed[i] = false;
     }
 
     // Update mouse position
-    if (glfwGetWindowAttrib(m_Window, GLFW_FOCUSED) != 0)
-    {
+    if (glfwGetWindowAttrib(m_Window, GLFW_FOCUSED) != 0) {
         if (io.WantSetMousePos)
             glfwSetCursorPos(m_Window, (double)io.MousePos.x, (double)io.MousePos.y);
-        else
-        {
+        else {
             double mouse_x, mouse_y;
             glfwGetCursorPos(m_Window, &mouse_x, &mouse_y);
             io.MousePos = ImVec2((float)mouse_x, (float)mouse_y);
@@ -521,16 +492,12 @@ void SampleBase::BeginUI()
     }
 
     // Update mouse cursor
-    if ((io.ConfigFlags & ImGuiConfigFlags_NoMouseCursorChange) == 0 && glfwGetInputMode(m_Window, GLFW_CURSOR) == GLFW_CURSOR_NORMAL)
-    {
+    if ((io.ConfigFlags & ImGuiConfigFlags_NoMouseCursorChange) == 0 && glfwGetInputMode(m_Window, GLFW_CURSOR) == GLFW_CURSOR_NORMAL) {
         ImGuiMouseCursor cursor = ImGui::GetMouseCursor();
-        if (cursor == ImGuiMouseCursor_None || io.MouseDrawCursor)
-        {
+        if (cursor == ImGuiMouseCursor_None || io.MouseDrawCursor) {
             // Hide OS mouse cursor if imgui is drawing it or if it wants no cursor
             CursorMode(GLFW_CURSOR_HIDDEN);
-        }
-        else
-        {
+        } else {
             // Show OS mouse cursor
             glfwSetCursor(m_Window, m_MouseCursors[cursor] ? m_MouseCursors[cursor] : m_MouseCursors[ImGuiMouseCursor_Arrow]);
             CursorMode(GLFW_CURSOR_NORMAL);
@@ -541,8 +508,7 @@ void SampleBase::BeginUI()
     ImGui::NewFrame();
 }
 
-void SampleBase::EndUI(const nri::StreamerInterface& streamerInterface, nri::Streamer& streamer)
-{
+void SampleBase::EndUI(const nri::StreamerInterface& streamerInterface, nri::Streamer& streamer) {
     if (!HasUserInterface())
         return;
 
@@ -567,12 +533,10 @@ void SampleBase::EndUI(const nri::StreamerInterface& streamerInterface, nri::Str
     uint8_t* indexData = m_UiData.data();
     ImDrawVertOpt* vertexData = (ImDrawVertOpt*)(indexData + indexDataSize);
 
-    for (int32_t n = 0; n < drawData.CmdListsCount; n++)
-    {
+    for (int32_t n = 0; n < drawData.CmdListsCount; n++) {
         const ImDrawList& drawList = *drawData.CmdLists[n];
 
-        for (int32_t i = 0; i < drawList.VtxBuffer.Size; i++)
-        {
+        for (int32_t i = 0; i < drawList.VtxBuffer.Size; i++) {
             const ImDrawVert* v = drawList.VtxBuffer.Data + i;
 
             ImDrawVertOpt opt;
@@ -598,8 +562,7 @@ void SampleBase::EndUI(const nri::StreamerInterface& streamerInterface, nri::Str
     m_VbOffset = m_IbOffset + indexDataSize;
 }
 
-void SampleBase::RenderUI(const nri::CoreInterface& NRI, const nri::StreamerInterface& streamerInterface, nri::Streamer& streamer, nri::CommandBuffer& commandBuffer, float sdrScale, bool isSrgb)
-{
+void SampleBase::RenderUI(const nri::CoreInterface& NRI, const nri::StreamerInterface& streamerInterface, nri::Streamer& streamer, nri::CommandBuffer& commandBuffer, float sdrScale, bool isSrgb) {
     if (!HasUserInterface() || m_VbOffset == m_IbOffset)
         return;
 
@@ -627,26 +590,20 @@ void SampleBase::RenderUI(const nri::CoreInterface& NRI, const nri::StreamerInte
     const ImDrawData& drawData = *ImGui::GetDrawData();
     int32_t vertexOffset = 0;
     uint32_t indexOffset = 0;
-    for (int32_t n = 0; n < drawData.CmdListsCount; n++)
-    {
+    for (int32_t n = 0; n < drawData.CmdListsCount; n++) {
         const ImDrawList& drawList = *drawData.CmdLists[n];
-        for (int32_t i = 0; i < drawList.CmdBuffer.Size; i++)
-        {
+        for (int32_t i = 0; i < drawList.CmdBuffer.Size; i++) {
             const ImDrawCmd& drawCmd = drawList.CmdBuffer[i];
             if (drawCmd.UserCallback)
                 drawCmd.UserCallback(&drawList, &drawCmd);
-            else
-            {
-                nri::Rect rect =
-                {
+            else {
+                nri::Rect rect = {
                     (int16_t)drawCmd.ClipRect.x,
                     (int16_t)drawCmd.ClipRect.y,
                     (nri::Dim_t)(drawCmd.ClipRect.z - drawCmd.ClipRect.x),
-                    (nri::Dim_t)(drawCmd.ClipRect.w - drawCmd.ClipRect.y)
-                };
+                    (nri::Dim_t)(drawCmd.ClipRect.w - drawCmd.ClipRect.y)};
 
-                if (rect.width != 0 && rect.height != 0)
-                {
+                if (rect.width != 0 && rect.height != 0) {
                     NRI.CmdSetScissors(commandBuffer, &rect, 1);
                     NRI.CmdDrawIndexed(commandBuffer, {drawCmd.ElemCount, 1, indexOffset, vertexOffset, 0});
                 }
@@ -657,8 +614,7 @@ void SampleBase::RenderUI(const nri::CoreInterface& NRI, const nri::StreamerInte
     }
 }
 
-bool SampleBase::Create(int32_t argc, char** argv, const char* windowTitle)
-{
+bool SampleBase::Create(int32_t argc, char** argv, const char* windowTitle) {
     // Command line
     cmdline::parser cmdLine;
 
@@ -667,14 +623,12 @@ bool SampleBase::Create(int32_t argc, char** argv, const char* windowTitle)
 
     bool parseStatus = cmdLine.parse(argc, argv);
 
-    if (cmdLine.exist("help"))
-    {
+    if (cmdLine.exist("help")) {
         printf("\n%s", cmdLine.usage().c_str());
         return false;
     }
 
-    if (!parseStatus)
-    {
+    if (!parseStatus) {
         printf("\n%s\n\n%s", cmdLine.error().c_str(), cmdLine.usage().c_str());
         return false;
     }
@@ -692,8 +646,7 @@ bool SampleBase::Create(int32_t argc, char** argv, const char* windowTitle)
     GLFWmonitor* monitor = glfwGetPrimaryMonitor();
 
     float contentScale = 1.0f;
-    if (m_DpiMode != 0)
-    {
+    if (m_DpiMode != 0) {
         float unused;
         glfwGetMonitorContentScale(monitor, &contentScale, &unused);
         printf("DPI scale %.1f%% (%s)\n", contentScale * 100.0f, m_DpiMode == 2 ? "quality" : "performance");
@@ -731,8 +684,7 @@ bool SampleBase::Create(int32_t argc, char** argv, const char* windowTitle)
     snprintf(windowName, sizeof(windowName), "%s [%s]", windowTitle, cmdLine.get<std::string>("api").c_str());
 
     m_Window = glfwCreateWindow(m_WindowResolution.x, m_WindowResolution.y, windowName, NULL, NULL);
-    if (!m_Window)
-    {
+    if (!m_Window) {
         glfwTerminate();
         return false;
     }
@@ -741,14 +693,14 @@ bool SampleBase::Create(int32_t argc, char** argv, const char* windowTitle)
     int32_t y = (screenH - m_WindowResolution.y) >> 1;
     glfwSetWindowPos(m_Window, x, y);
 
-    #if _WIN32
-        m_NRIWindow.windows.hwnd = glfwGetWin32Window(m_Window);
-    #elif __linux__
-        m_NRIWindow.x11.dpy = glfwGetX11Display();
-        m_NRIWindow.x11.window = glfwGetX11Window(m_Window);
-    #elif __APPLE__
-        m_NRIWindow.metal.caMetalLayer = GetMetalLayer(m_Window);
-    #endif
+#if _WIN32
+    m_NRIWindow.windows.hwnd = glfwGetWin32Window(m_Window);
+#elif __linux__
+    m_NRIWindow.x11.dpy = glfwGetX11Display();
+    m_NRIWindow.x11.window = glfwGetX11Window(m_Window);
+#elif __APPLE__
+    m_NRIWindow.metal.caMetalLayer = GetMetalLayer(m_Window);
+#endif
 
     // Main initialization
     printf("Loading...\n");
@@ -773,18 +725,15 @@ bool SampleBase::Create(int32_t argc, char** argv, const char* windowTitle)
     return result;
 }
 
-void SampleBase::RenderLoop()
-{
-    for (uint32_t i = 0; i < m_FrameNum; i++)
-    {
+void SampleBase::RenderLoop() {
+    for (uint32_t i = 0; i < m_FrameNum; i++) {
         LatencySleep(i);
 
         // Events
         glfwPollEvents();
 
         m_IsActive = glfwGetWindowAttrib(m_Window, GLFW_FOCUSED) != 0;
-        if (!m_IsActive)
-        {
+        if (!m_IsActive) {
             i--;
             continue;
         }
@@ -812,39 +761,33 @@ void SampleBase::RenderLoop()
         "Shutting down...\n",
         1000.0f / m_Timer.GetFrameTime(), m_Timer.GetFrameTime(),
         1000.0f / m_Timer.GetSmoothedFrameTime(), m_Timer.GetSmoothedFrameTime(),
-        1000.0f / m_Timer.GetVerySmoothedFrameTime(), m_Timer.GetVerySmoothedFrameTime()
-    );
+        1000.0f / m_Timer.GetVerySmoothedFrameTime(), m_Timer.GetVerySmoothedFrameTime());
 }
 
-void SampleBase::CursorMode(int32_t mode)
-{
-    if (mode == GLFW_CURSOR_NORMAL)
-    {
+void SampleBase::CursorMode(int32_t mode) {
+    if (mode == GLFW_CURSOR_NORMAL) {
         glfwSetInputMode(m_Window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
-        #if defined(_WIN32)
-            // GLFW works with cursor visibility incorrectly
-            for (uint32_t n = 0; ::ShowCursor(1) < 0 && n < 256; n++)
-                ;
-        #endif
-    }
-    else
-    {
+#if defined(_WIN32)
+        // GLFW works with cursor visibility incorrectly
+        for (uint32_t n = 0; ::ShowCursor(1) < 0 && n < 256; n++)
+            ;
+#endif
+    } else {
         glfwSetInputMode(m_Window, GLFW_CURSOR, mode);
-        #if defined(_WIN32)
-            // GLFW works with cursor visibility incorrectly
-            for (uint32_t n = 0; ::ShowCursor(0) >= 0 && n < 256; n++)
-                ;
-        #endif
+#if defined(_WIN32)
+        // GLFW works with cursor visibility incorrectly
+        for (uint32_t n = 0; ::ShowCursor(0) >= 0 && n < 256; n++)
+            ;
+#endif
     }
 }
 
-void SampleBase::InitCmdLineDefault(cmdline::parser& cmdLine)
-{
-    #if _WIN32
-        std::string graphicsAPI = "D3D12";
-    #else
-        std::string graphicsAPI = "VULKAN";
-    #endif
+void SampleBase::InitCmdLineDefault(cmdline::parser& cmdLine) {
+#if _WIN32
+    std::string graphicsAPI = "D3D12";
+#else
+    std::string graphicsAPI = "VULKAN";
+#endif
 
     cmdLine.add("help", '?', "print this message");
     cmdLine.add<std::string>("api", 'a', "graphics API: D3D11, D3D12 or VULKAN", false, graphicsAPI, cmdline::oneof<std::string>("D3D11", "D3D12", "VULKAN"));
@@ -858,8 +801,7 @@ void SampleBase::InitCmdLineDefault(cmdline::parser& cmdLine)
     cmdLine.add("debugNRI", 0, "enable NRI validation layer");
 }
 
-void SampleBase::ReadCmdLineDefault(cmdline::parser& cmdLine)
-{
+void SampleBase::ReadCmdLineDefault(cmdline::parser& cmdLine) {
     m_SceneFile = cmdLine.get<std::string>("scene");
     m_OutputResolution.x = cmdLine.get<uint32_t>("width");
     m_OutputResolution.y = cmdLine.get<uint32_t>("height");
@@ -870,9 +812,8 @@ void SampleBase::ReadCmdLineDefault(cmdline::parser& cmdLine)
     m_DpiMode = cmdLine.get<uint32_t>("dpiMode");
 }
 
-void SampleBase::EnableMemoryLeakDetection([[maybe_unused]] uint32_t breakOnAllocationIndex)
-{
-#if( defined(_DEBUG) && defined(_WIN32) )
+void SampleBase::EnableMemoryLeakDetection([[maybe_unused]] uint32_t breakOnAllocationIndex) {
+#if (defined(_DEBUG) && defined(_WIN32))
     int32_t flag = _CrtSetDbgFlag(_CRTDBG_REPORT_FLAG);
     flag |= _CRTDBG_LEAK_CHECK_DF;
     _CrtSetDbgFlag(flag);

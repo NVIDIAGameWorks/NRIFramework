@@ -7,9 +7,9 @@
 #define NRI_FRAMEWORK_VERSION_DATE "19 March 2024"
 #define NRI_FRAMEWORK 1
 
-#include <vector>
 #include <array>
 #include <string>
+#include <vector>
 
 // 3rd party
 #define GLFW_INCLUDE_NONE
@@ -18,8 +18,13 @@
 
 // NRI: core & common extensions
 #include "NRI.h"
+
 #include "Extensions/NRIDeviceCreation.h"
 #include "Extensions/NRIHelper.h"
+#include "Extensions/NRILowLatency.h"
+#include "Extensions/NRIMeshShader.h"
+#include "Extensions/NRIRayTracing.h"
+#include "Extensions/NRIResourceAllocator.h"
 #include "Extensions/NRIStreamer.h"
 #include "Extensions/NRISwapChain.h"
 
@@ -30,11 +35,11 @@
 #include "MathLib/ml.hlsli"
 
 // NRI framework
-#include "Helper.h"
-#include "Utils.h"
 #include "Camera.h"
 #include "Controls.h"
+#include "Helper.h"
 #include "Timer.h"
+#include "Utils.h"
 
 // Settings
 constexpr nri::SPIRVBindingOffsets SPIRV_BINDING_OFFSETS = {100, 200, 300, 400}; // just ShaderMake defaults for simplicity
@@ -43,31 +48,30 @@ constexpr uint32_t DEFAULT_MEMORY_ALIGNMENT = 16;
 constexpr uint32_t BUFFERED_FRAME_MAX_NUM = 2;
 constexpr uint32_t SWAP_CHAIN_TEXTURE_NUM = 2;
 
-struct BackBuffer
-{
+struct BackBuffer {
     nri::Descriptor* colorAttachment;
     nri::Texture* texture;
 };
 
-class SampleBase
-{
+class SampleBase {
 public:
     // Pre initialize
     SampleBase();
 
-    virtual void InitCmdLine([[maybe_unused]] cmdline::parser& cmdLine)
-    {}
+    virtual void InitCmdLine([[maybe_unused]] cmdline::parser& cmdLine) {
+    }
 
-    virtual void ReadCmdLine([[maybe_unused]] cmdline::parser& cmdLine)
-    {}
+    virtual void ReadCmdLine([[maybe_unused]] cmdline::parser& cmdLine) {
+    }
 
     // Initialize
     virtual bool Initialize(nri::GraphicsAPI graphicsAPI) = 0;
     bool InitUI(const nri::CoreInterface& NRI, const nri::HelperInterface& helperInterface, nri::Device& device, nri::Format renderTargetFormat);
 
     // Wait before input (wait for latency and/or queued frames)
-    virtual void LatencySleep(uint32_t frameIndex)
-    { (void)frameIndex; }
+    virtual void LatencySleep(uint32_t frameIndex) {
+        (void)frameIndex;
+    }
 
     // Prepare
     virtual void PrepareFrame(uint32_t frameIndex) = 0;
@@ -84,37 +88,44 @@ public:
     void DestroyUI(const nri::CoreInterface& NRI);
 
     // Misc
-    virtual bool AppShouldClose()
-    { return false; }
+    virtual bool AppShouldClose() {
+        return false;
+    }
 
-    inline bool IsKeyToggled(Key key)
-    {
+    inline bool IsKeyToggled(Key key) {
         bool state = m_KeyToggled[(uint32_t)key];
         m_KeyToggled[(uint32_t)key] = false;
 
         return state;
     }
 
-    inline bool IsKeyPressed(Key key) const
-    { return m_KeyState[(uint32_t)key]; }
+    inline bool IsKeyPressed(Key key) const {
+        return m_KeyState[(uint32_t)key];
+    }
 
-    inline bool IsButtonPressed(Button button) const
-    { return m_ButtonState[(uint8_t)button]; }
+    inline bool IsButtonPressed(Button button) const {
+        return m_ButtonState[(uint8_t)button];
+    }
 
-    inline const float2& GetMouseDelta() const
-    { return m_MouseDelta; }
+    inline const float2& GetMouseDelta() const {
+        return m_MouseDelta;
+    }
 
-    inline float GetMouseWheel() const
-    { return m_MouseWheel; }
+    inline float GetMouseWheel() const {
+        return m_MouseWheel;
+    }
 
-    inline uint2 GetWindowResolution() const
-    { return m_WindowResolution; }
+    inline uint2 GetWindowResolution() const {
+        return m_WindowResolution;
+    }
 
-    inline uint2 GetOutputResolution() const
-    { return m_OutputResolution; }
+    inline uint2 GetOutputResolution() const {
+        return m_OutputResolution;
+    }
 
-    inline const nri::Window& GetWindow() const
-    { return m_NRIWindow; }
+    inline const nri::Window& GetWindow() const {
+        return m_NRIWindow;
+    }
 
     void GetCameraDescFromInputDevices(CameraDesc& cameraDesc);
 
@@ -141,8 +152,9 @@ private:
     void CursorMode(int32_t mode);
 
 public:
-    inline bool HasUserInterface() const
-    { return m_TimePrev != 0.0; }
+    inline bool HasUserInterface() const {
+        return m_TimePrev != 0.0;
+    }
 
     void InitCmdLineDefault(cmdline::parser& cmdLine);
     void ReadCmdLineDefault(cmdline::parser& cmdLine);
@@ -186,8 +198,7 @@ private:
 #define STRINGIFY(s) _STRINGIFY(s)
 
 #define SAMPLE_MAIN(className, memoryAllocationIndexForBreak) \
-    int main(int argc, char** argv) \
-    { \
+    int main(int argc, char** argv) { \
         SampleBase::EnableMemoryLeakDetection(memoryAllocationIndexForBreak); \
         SampleBase* sample = new className; \
         bool result = sample->Create(argc, argv, STRINGIFY(PROJECT_NAME)); \

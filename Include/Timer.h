@@ -2,8 +2,7 @@
 
 #include <cstdint>
 
-class Timer
-{
+class Timer {
 public:
     Timer();
 
@@ -11,20 +10,22 @@ public:
 
     // In milliseconds
     double GetTimeStamp() const;
-    
-    inline double GetLastFrameTimeStamp() const
-    { return m_Time * m_InvTicksPerMs; }
 
-    inline float GetFrameTime() const
-    { return m_Delta; }
+    inline double GetLastFrameTimeStamp() const {
+        return m_Time * m_InvTicksPerMs;
+    }
 
-    inline float GetSmoothedFrameTime() const
-    { return m_SmoothedDelta; }
+    inline float GetFrameTime() const {
+        return m_Delta;
+    }
 
-    inline float GetVerySmoothedFrameTime() const
-    { return m_VerySmoothedDelta; }
+    inline float GetSmoothedFrameTime() const {
+        return m_SmoothedDelta;
+    }
 
-private:
+    inline float GetVerySmoothedFrameTime() const {
+        return m_VerySmoothedDelta;
+    }
 
 private:
     uint64_t m_Time = 0;

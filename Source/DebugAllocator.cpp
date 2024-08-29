@@ -1,24 +1,21 @@
 #if _WIN32
-#include <windows.h>
+#    include <windows.h>
 #endif
 
 #include "NRIFramework.h"
 
-struct DebugAllocator
-{
+struct DebugAllocator {
     std::atomic_uint64_t allocationNum = 0;
     std::atomic_size_t allocatedSize = 0;
 };
 
-struct DebugAllocatorHeader
-{
+struct DebugAllocatorHeader {
     size_t size;
     uint32_t alignment;
     uint32_t offset;
 };
 
-inline void ReportAllocatorError(const char* message)
-{
+inline void ReportAllocatorError(const char* message) {
 #if _WIN32
     OutputDebugStringA(message);
 #endif
@@ -26,13 +23,11 @@ inline void ReportAllocatorError(const char* message)
     std::abort();
 }
 
-inline DebugAllocatorHeader* GetAllocationHeader(void* memory)
-{
+inline DebugAllocatorHeader* GetAllocationHeader(void* memory) {
     return (DebugAllocatorHeader*)memory - 1;
 }
 
-static void* DebugAlignedMalloc(void* userArg, size_t size, size_t alignment)
-{
+static void* DebugAlignedMalloc(void* userArg, size_t size, size_t alignment) {
     DebugAllocator* allocator = (DebugAllocator*)userArg;
 
     if (alignment == 0)
@@ -57,11 +52,10 @@ static void* DebugAlignedMalloc(void* userArg, size_t size, size_t alignment)
     allocator->allocatedSize.fetch_add(allocationSize, std::memory_order_relaxed);
     allocator->allocationNum.fetch_add(1, std::memory_order_relaxed);
 
-    return alignedMemory; 
+    return alignedMemory;
 }
 
-static void* DebugAlignedRealloc(void* userArg, void* memory, size_t size, size_t alignment)
-{
+static void* DebugAlignedRealloc(void* userArg, void* memory, size_t size, size_t alignment) {
     DebugAllocator* allocator = (DebugAllocator*)userArg;
 
     if (alignment == 0)
@@ -98,8 +92,7 @@ static void* DebugAlignedRealloc(void* userArg, void* memory, size_t size, size_
     return alignedMemory;
 }
 
-static void DebugAlignedFree(void* userArg, void* memory)
-{
+static void DebugAlignedFree(void* userArg, void* memory) {
     if (memory == nullptr)
         return;
 
@@ -117,8 +110,7 @@ static void DebugAlignedFree(void* userArg, void* memory)
     free((uint8_t*)memory - header->offset);
 }
 
-void CreateDebugAllocator(nri::AllocationCallbacks& allocationCallbacks)
-{
+void CreateDebugAllocator(nri::AllocationCallbacks& allocationCallbacks) {
     allocationCallbacks = {};
     allocationCallbacks.userArg = new DebugAllocator();
     allocationCallbacks.Allocate = DebugAlignedMalloc;
@@ -126,8 +118,7 @@ void CreateDebugAllocator(nri::AllocationCallbacks& allocationCallbacks)
     allocationCallbacks.Free = DebugAlignedFree;
 }
 
-void DestroyDebugAllocator(nri::AllocationCallbacks& allocationCallbacks)
-{
+void DestroyDebugAllocator(nri::AllocationCallbacks& allocationCallbacks) {
     DebugAllocator* debugAllocator = (DebugAllocator*)allocationCallbacks.userArg;
 
     if (debugAllocator->allocatedSize.load(std::memory_order_relaxed) != 0)
