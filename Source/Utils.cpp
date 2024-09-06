@@ -155,34 +155,36 @@ static void GeneratePrimitiveDataAndTangents(utils::Scene& scene, const utils::M
         float3 p1(v1.pos);
         float3 p2(v2.pos);
 
+        float3 n0 = float3(v0.N);
+        float3 n1 = float3(v1.N);
+        float3 n2 = float3(v2.N);
+
         float3 edge20 = p2 - p0;
         float3 edge10 = p1 - p0;
-        float worldArea = max(length(cross(edge20, edge10)), 1e-9f);
+        float worldArea = length(cross(edge20, edge10));
 
         float3 uvEdge20 = float3(v2.uv[0], v2.uv[1], 0.0f) - float3(v0.uv[0], v0.uv[1], 0.0f);
         float3 uvEdge10 = float3(v1.uv[0], v1.uv[1], 0.0f) - float3(v0.uv[0], v0.uv[1], 0.0f);
         float uvArea = length(cross(uvEdge20, uvEdge10));
 
         utils::Primitive& primitive = scene.primitives[primitiveBaseIndex / 3];
-        primitive.worldToUvUnits = uvArea == 0 ? 1.0f : sqrt(uvArea / worldArea);
+        primitive.worldToUvUnits = (uvArea == 0.0f || worldArea == 0.0f) ? 1.0f : sqrt(uvArea / worldArea);
 
         // Unsigned curvature // TODO: make signed?
         // https://computergraphics.stackexchange.com/questions/1718/what-is-the-simplest-way-to-compute-principal-curvature-for-a-mesh-triangle
-        float3 n0 = float3(v0.N);
-        float3 n1 = float3(v1.N);
-        float3 n2 = float3(v2.N);
+        if (worldArea != 0.0f) {
+            double curvature10 = abs(dot(n1 - n0, p1 - p0)) / Math::LengthSquared(p1 - p0);
+            double curvature21 = abs(dot(n2 - n1, p2 - p1)) / Math::LengthSquared(p2 - p1);
+            double curvature02 = abs(dot(n0 - n2, p0 - p2)) / Math::LengthSquared(p0 - p2);
 
-        double curvature10 = abs(dot(n1 - n0, p1 - p0)) / Math::LengthSquared(p1 - p0);
-        double curvature21 = abs(dot(n2 - n1, p2 - p1)) / Math::LengthSquared(p2 - p1);
-        double curvature02 = abs(dot(n0 - n2, p0 - p2)) / Math::LengthSquared(p0 - p2);
+            curvatures[i0] += max(curvature10, curvature02) * worldArea;
+            curvatures[i1] += max(curvature10, curvature21) * worldArea;
+            curvatures[i2] += max(curvature02, curvature21) * worldArea;
 
-        curvatures[i0] += max(curvature10, curvature02) * worldArea;
-        curvatures[i1] += max(curvature10, curvature21) * worldArea;
-        curvatures[i2] += max(curvature02, curvature21) * worldArea;
-
-        curvatureWeights[i0] += worldArea;
-        curvatureWeights[i1] += worldArea;
-        curvatureWeights[i2] += worldArea;
+            curvatureWeights[i0] += worldArea;
+            curvatureWeights[i1] += worldArea;
+            curvatureWeights[i2] += worldArea;
+        }
 
         // Tangent
         float r = uvEdge10.x * uvEdge20.y - uvEdge20.x * uvEdge10.y;
