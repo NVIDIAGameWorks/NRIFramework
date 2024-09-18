@@ -260,16 +260,16 @@ bool SampleBase::InitUI(const nri::CoreInterface& NRI, const nri::HelperInterfac
 
         nri::DescriptorSetDesc descriptorSet = {0, descriptorRanges, helper::GetCountOf(descriptorRanges)};
 
-        nri::PushConstantDesc pushConstants = {};
-        pushConstants.registerIndex = 0;
-        pushConstants.size = 16;
-        pushConstants.shaderStages = nri::StageBits::ALL;
+        nri::RootConstantDesc rootConstants = {};
+        rootConstants.registerIndex = 0;
+        rootConstants.size = 16;
+        rootConstants.shaderStages = nri::StageBits::ALL;
 
         nri::PipelineLayoutDesc pipelineLayoutDesc = {};
         pipelineLayoutDesc.descriptorSetNum = 1;
         pipelineLayoutDesc.descriptorSets = &descriptorSet;
-        pipelineLayoutDesc.pushConstantNum = 1;
-        pipelineLayoutDesc.pushConstants = &pushConstants;
+        pipelineLayoutDesc.rootConstantNum = 1;
+        pipelineLayoutDesc.rootConstants = &rootConstants;
         pipelineLayoutDesc.shaderStages = nri::StageBits::VERTEX_SHADER | nri::StageBits::FRAGMENT_SHADER;
 
         if (NRI.CreatePipelineLayout(device, pipelineLayoutDesc, m_PipelineLayout) != nri::Result::SUCCESS)
@@ -328,8 +328,8 @@ bool SampleBase::InitUI(const nri::CoreInterface& NRI, const nri::HelperInterfac
         colorAttachmentDesc.alphaBlend = {nri::BlendFactor::ONE_MINUS_SRC_ALPHA, nri::BlendFactor::ZERO, nri::BlendFunc::ADD};
 
         nri::OutputMergerDesc outputMergerDesc = {};
+        outputMergerDesc.colors = &colorAttachmentDesc;
         outputMergerDesc.colorNum = 1;
-        outputMergerDesc.color = &colorAttachmentDesc;
 
         nri::GraphicsPipelineDesc graphicsPipelineDesc = {};
         graphicsPipelineDesc.pipelineLayout = m_PipelineLayout;
@@ -577,7 +577,7 @@ void SampleBase::RenderUI(const nri::CoreInterface& NRI, const nri::StreamerInte
     NRI.CmdSetDescriptorPool(commandBuffer, *m_DescriptorPool);
     NRI.CmdSetPipelineLayout(commandBuffer, *m_PipelineLayout);
     NRI.CmdSetPipeline(commandBuffer, *m_Pipeline);
-    NRI.CmdSetConstants(commandBuffer, 0, consts, sizeof(consts));
+    NRI.CmdSetRootConstants(commandBuffer, 0, consts, sizeof(consts));
     NRI.CmdSetDescriptorSet(commandBuffer, 0, *m_DescriptorSet, nullptr);
 
     nri::Buffer* geometryBuffer = streamerInterface.GetStreamerDynamicBuffer(streamer);

@@ -25,6 +25,12 @@ set (VERSION_MINOR ${CMAKE_MATCH_1})
 message ("NRIFramework v${VERSION_MAJOR}.${VERSION_MINOR}")
 project (NRIFramework LANGUAGES C CXX)
 
+if (IS_SUBMODULE)
+    file (RELATIVE_PATH PROJECT_FOLDER ${CMAKE_SOURCE_DIR} ${CMAKE_CURRENT_SOURCE_DIR})
+else ()
+    set (PROJECT_FOLDER ${PROJECT_NAME})
+endif ()
+
 # Globals?
 set_property (GLOBAL PROPERTY USE_FOLDERS ON)
 
@@ -56,14 +62,14 @@ file (GLOB IMGUI_SOURCE "External/Imgui/*.cpp" "External/Imgui/*.h")
 source_group ("" FILES ${IMGUI_SOURCE})
 add_library (imgui STATIC ${IMGUI_SOURCE})
 target_compile_definitions (imgui PRIVATE ${COMPILE_DEFINITIONS})
-set_property (TARGET imgui PROPERTY FOLDER "${PROJECT_NAME}/External")
+set_property (TARGET imgui PROPERTY FOLDER "${PROJECT_FOLDER}/External")
 
 # External/Detex
 file (GLOB DETEX_SOURCE "External/Detex/*.c" "External/Detex/*.h")
 source_group ("" FILES ${DETEX_SOURCE})
 add_library (detex STATIC ${DETEX_SOURCE})
 target_compile_definitions (detex PRIVATE ${COMPILE_DEFINITIONS})
-set_property (TARGET detex PROPERTY FOLDER "${PROJECT_NAME}/External")
+set_property (TARGET detex PROPERTY FOLDER "${PROJECT_FOLDER}/External")
 
 # External/MathLib
 file (READ "${CMAKE_CURRENT_SOURCE_DIR}/External/MathLib/ml.h" ver_h)
@@ -86,8 +92,8 @@ option (GLFW_BUILD_TESTS "" OFF)
 option (GLFW_BUILD_DOCS "" OFF)
 option (GLFW_INSTALL "" OFF)
 add_subdirectory ("External/Glfw")
-set_property (TARGET glfw PROPERTY FOLDER "${PROJECT_NAME}/External")
-set_property (TARGET update_mappings PROPERTY FOLDER "${PROJECT_NAME}/External")
+set_property (TARGET glfw PROPERTY FOLDER "${PROJECT_FOLDER}/External")
+set_property (TARGET update_mappings PROPERTY FOLDER "${PROJECT_FOLDER}/External")
 
 # External/MetalUtility
 if (APPLE)
@@ -114,12 +120,14 @@ endif ()
 target_include_directories (${PROJECT_NAME} PRIVATE "Source" "Include" "External" "External/NRI/Include")
 target_compile_definitions (${PROJECT_NAME} PRIVATE ${COMPILE_DEFINITIONS})
 target_compile_options (${PROJECT_NAME} PRIVATE ${COMPILE_OPTIONS})
-set_property (TARGET ${PROJECT_NAME} PROPERTY FOLDER ${PROJECT_NAME})
+set_property (TARGET ${PROJECT_NAME} PROPERTY FOLDER ${PROJECT_FOLDER})
 
 # External/ShaderMake
 if (NOT TARGET ShaderMake)
     set (SHADERMAKE_BIN_OUTPUT_PATH ${CMAKE_RUNTIME_OUTPUT_DIRECTORY} CACHE STRING "")
     add_subdirectory (External/ShaderMake)
+    set_property (TARGET ShaderMake PROPERTY FOLDER "${PROJECT_FOLDER}/External")
+    set_property (TARGET ShaderMakeBlob PROPERTY FOLDER "${PROJECT_FOLDER}/External")
 endif ()
 
 # Shaders output directory
@@ -163,5 +171,5 @@ else ()
     )
 endif ()
 
-set_property (TARGET ${PROJECT_NAME}_Shaders PROPERTY FOLDER ${PROJECT_NAME})
+set_property (TARGET ${PROJECT_NAME}_Shaders PROPERTY FOLDER ${PROJECT_FOLDER})
 add_dependencies (${PROJECT_NAME} ${PROJECT_NAME}_Shaders)

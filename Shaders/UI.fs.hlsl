@@ -10,7 +10,7 @@ struct PushConstants
     float gIsSrgb;
 };
 
-NRI_PUSH_CONSTANTS( PushConstants, g_PushConstants, 0 );
+NRI_ROOT_CONSTANTS( PushConstants, g_PushConstants, 0 );
 
 struct PS_INPUT
 {
