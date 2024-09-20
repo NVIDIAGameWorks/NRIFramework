@@ -83,7 +83,7 @@ file (GLOB ML_HEADERS "External/MathLib/*.h" "External/MathLib/*.hpp")
 source_group ("MathLib" FILES ${ML_HEADERS})
 
 # External/NRI
-# option (NRI_ENABLE_AGILITY_SDK_SUPPORT "" ON)
+option (NRI_ENABLE_AGILITY_SDK_SUPPORT "" OFF)
 add_subdirectory ("External/NRI")
 
 # External/Glfw
@@ -104,6 +104,10 @@ if (APPLE)
 endif ()
 
 # NRIFramework
+if (NRI_ENABLE_AGILITY_SDK_SUPPORT)
+    set (COMPILE_DEFINITIONS ${COMPILE_DEFINITIONS} NRI_ENABLE_AGILITY_SDK_SUPPORT)
+endif ()
+
 file (GLOB FRAMEWORK_SOURCE "Source/*.cpp" "Source/*.h")
 source_group ("Source" FILES ${FRAMEWORK_SOURCE})
 file (GLOB FRAMEWORK_HEADERS "Include/*.hpp" "Include/*.h" "External/Cgltf/cgltf.h")

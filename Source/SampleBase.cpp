@@ -1,7 +1,10 @@
 // © 2021 NVIDIA Corporation
 
 #include "NRIFramework.h"
-// #include "NRIAgilitySDK.h"
+
+#ifdef NRI_ENABLE_AGILITY_SDK_SUPPORT
+    #include "NRIAgilitySDK.h"
+#endif
 
 #if defined _WIN32
 #    define GLFW_EXPOSE_NATIVE_WIN32
@@ -360,11 +363,9 @@ bool SampleBase::InitUI(const nri::CoreInterface& NRI, const nri::HelperInterfac
     textureDesc.format = format;
     textureDesc.width = (uint16_t)fontWidth;
     textureDesc.height = (uint16_t)fontHeight;
-    textureDesc.depth = 1;
     textureDesc.mipNum = 1;
-    textureDesc.layerNum = 1;
-    textureDesc.sampleNum = 1;
     textureDesc.usageMask = nri::TextureUsageBits::SHADER_RESOURCE;
+
     if (NRI.CreateTexture(device, textureDesc, m_FontTexture) != nri::Result::SUCCESS)
         return false;
 
