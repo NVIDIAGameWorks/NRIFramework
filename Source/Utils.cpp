@@ -137,9 +137,6 @@ static void GeneratePrimitiveDataAndTangents(utils::Scene& scene, const utils::M
     std::vector<float3> tangents(mesh.vertexNum, float3::Zero());
     std::vector<float3> bitangents(mesh.vertexNum, float3::Zero());
 
-    std::vector<double> curvatures(mesh.vertexNum, 0.0);
-    std::vector<double> curvatureWeights(mesh.vertexNum, 0.0);
-
     for (size_t j = 0; j < mesh.indexNum; j += 3) {
         size_t primitiveBaseIndex = mesh.indexOffset + j;
 
@@ -161,30 +158,15 @@ static void GeneratePrimitiveDataAndTangents(utils::Scene& scene, const utils::M
 
         float3 edge20 = p2 - p0;
         float3 edge10 = p1 - p0;
-        float worldArea = length(cross(edge20, edge10));
+        float worldArea = length(cross(edge20, edge10)) * 0.5f;
 
         float3 uvEdge20 = float3(v2.uv[0], v2.uv[1], 0.0f) - float3(v0.uv[0], v0.uv[1], 0.0f);
         float3 uvEdge10 = float3(v1.uv[0], v1.uv[1], 0.0f) - float3(v0.uv[0], v0.uv[1], 0.0f);
-        float uvArea = length(cross(uvEdge20, uvEdge10));
+        float uvArea = length(cross(uvEdge20, uvEdge10)) * 0.5f;
 
         utils::Primitive& primitive = scene.primitives[primitiveBaseIndex / 3];
-        primitive.worldToUvUnits = (uvArea == 0.0f || worldArea == 0.0f) ? 1.0f : sqrt(uvArea / worldArea);
-
-        // Unsigned curvature // TODO: make signed?
-        // https://computergraphics.stackexchange.com/questions/1718/what-is-the-simplest-way-to-compute-principal-curvature-for-a-mesh-triangle
-        if (worldArea != 0.0f) {
-            double curvature10 = abs(dot(n1 - n0, p1 - p0)) / Math::LengthSquared(p1 - p0);
-            double curvature21 = abs(dot(n2 - n1, p2 - p1)) / Math::LengthSquared(p2 - p1);
-            double curvature02 = abs(dot(n0 - n2, p0 - p2)) / Math::LengthSquared(p0 - p2);
-
-            curvatures[i0] += max(curvature10, curvature02) * worldArea;
-            curvatures[i1] += max(curvature10, curvature21) * worldArea;
-            curvatures[i2] += max(curvature02, curvature21) * worldArea;
-
-            curvatureWeights[i0] += worldArea;
-            curvatureWeights[i1] += worldArea;
-            curvatureWeights[i2] += worldArea;
-        }
+        primitive.uvArea = max(uvArea, 1e-9f);
+        primitive.worldArea = max(worldArea, 1e-9f);
 
         // Tangent
         float r = uvEdge10.x * uvEdge20.y - uvEdge20.x * uvEdge10.y;
@@ -234,7 +216,6 @@ static void GeneratePrimitiveDataAndTangents(utils::Scene& scene, const utils::M
         unpackedVertex.T[1] = result.y;
         unpackedVertex.T[2] = result.z;
         unpackedVertex.T[3] = result.w;
-        unpackedVertex.curvature = float(curvatures[j] / curvatureWeights[j]);
 
         utils::Vertex& vertex = scene.vertices[mesh.vertexOffset + j];
         vertex.T = Packing::float4_to_unorm<10, 10, 10, 2>(result * 0.5f + 0.5f);
@@ -957,6 +938,7 @@ bool utils::LoadScene(const std::string& path, Scene& scene, bool allowUpdate) {
 
                 for (size_t v_idx = 0; v_idx < mesh.vertexNum; v_idx++) {
                     float3 normal((const float*)normalSrc);
+                    normal = normalize(normal);
 
                     UnpackedVertex& unpackedVertex = scene.unpackedVertices[mesh.vertexOffset + v_idx];
                     unpackedVertex.N[0] = normal.x;

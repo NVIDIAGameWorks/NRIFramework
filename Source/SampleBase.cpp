@@ -364,7 +364,7 @@ bool SampleBase::InitUI(const nri::CoreInterface& NRI, const nri::HelperInterfac
     textureDesc.width = (uint16_t)fontWidth;
     textureDesc.height = (uint16_t)fontHeight;
     textureDesc.mipNum = 1;
-    textureDesc.usageMask = nri::TextureUsageBits::SHADER_RESOURCE;
+    textureDesc.usage = nri::TextureUsageBits::SHADER_RESOURCE;
 
     if (NRI.CreateTexture(device, textureDesc, m_FontTexture) != nri::Result::SUCCESS)
         return false;

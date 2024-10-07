@@ -187,11 +187,11 @@ struct UnpackedVertex {
     float uv[2];
     float N[3];
     float T[4];
-    float curvature;
 };
 
 struct Primitive {
-    float worldToUvUnits;
+    float worldArea;
+    float uvArea;
 };
 
 struct SceneNode {
