@@ -2,6 +2,8 @@
 #    include <windows.h>
 #endif
 
+#include <atomic>
+
 #include "NRIFramework.h"
 
 struct DebugAllocator {
