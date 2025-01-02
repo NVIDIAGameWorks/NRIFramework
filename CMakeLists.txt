@@ -84,6 +84,7 @@ source_group ("MathLib" FILES ${ML_HEADERS})
 
 # External/NRI
 option (NRI_ENABLE_AGILITY_SDK_SUPPORT "" OFF)
+option (NRI_ENABLE_NVTX_SUPPORT "" ON)
 add_subdirectory ("External/NRI")
 
 # External/Glfw

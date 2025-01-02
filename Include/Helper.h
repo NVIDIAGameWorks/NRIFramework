@@ -39,7 +39,7 @@ struct Annotation {
 
     inline Annotation(const nri::CoreInterface& NRI, nri::CommandBuffer& commandBuffer, const char* name)
         : m_NRI(NRI), m_CommandBuffer(commandBuffer) {
-        m_NRI.CmdBeginAnnotation(m_CommandBuffer, name);
+        m_NRI.CmdBeginAnnotation(m_CommandBuffer, name, nri::BGRA_UNUSED);
     }
 
     inline ~Annotation() {
