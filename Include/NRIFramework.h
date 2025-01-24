@@ -42,7 +42,7 @@
 #include "Utils.h"
 
 // Settings
-constexpr nri::SPIRVBindingOffsets SPIRV_BINDING_OFFSETS = {100, 200, 300, 400}; // just ShaderMake defaults for simplicity
+constexpr nri::VKBindingOffsets VK_BINDING_OFFSETS = {100, 200, 300, 400}; // just ShaderMake defaults for simplicity
 constexpr bool D3D11_COMMANDBUFFER_EMULATION = false;
 constexpr uint32_t DEFAULT_MEMORY_ALIGNMENT = 16;
 constexpr uint32_t BUFFERED_FRAME_MAX_NUM = 2;

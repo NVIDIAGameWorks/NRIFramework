@@ -590,8 +590,8 @@ bool SampleBase::InitUI(const nri::CoreInterface& NRI, const nri::HelperInterfac
         return false;
 
     // Upload data
-    nri::CommandQueue* commandQueue = nullptr;
-    NRI.GetCommandQueue(device, nri::CommandQueueType::GRAPHICS, commandQueue);
+    nri::Queue* queue = nullptr;
+    NRI.GetQueue(device, nri::QueueType::GRAPHICS, 0, queue);
     {
         nri::TextureSubresourceUploadDesc subresource = {};
         texture.GetSubresource(subresource, 0);
@@ -601,7 +601,7 @@ bool SampleBase::InitUI(const nri::CoreInterface& NRI, const nri::HelperInterfac
         textureData.texture = m_FontTexture;
         textureData.after = {nri::AccessBits::SHADER_RESOURCE, nri::Layout::SHADER_RESOURCE};
 
-        if (helperInterface.UploadData(*commandQueue, &textureData, 1, nullptr, 0) != nri::Result::SUCCESS)
+        if (helperInterface.UploadData(*queue, &textureData, 1, nullptr, 0) != nri::Result::SUCCESS)
             return false;
     }
 
