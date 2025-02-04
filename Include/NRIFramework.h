@@ -13,8 +13,8 @@
 
 // 3rd party
 #define GLFW_INCLUDE_NONE
-#include "Glfw/include/GLFW/glfw3.h"
-#include "Imgui/imgui.h"
+#include "GLFW/glfw3.h"
+#include "imgui.h"
 
 // NRI: core & common extensions
 #include "NRI.h"

@@ -54,11 +54,48 @@ endif ()
 
 # Compile definitions
 if (WIN32)
-    set (COMPILE_DEFINITIONS WIN32_LEAN_AND_MEAN NOMINMAX _CRT_SECURE_NO_WARNINGS _UNICODE UNICODE)
+    set (COMPILE_DEFINITIONS WIN32_LEAN_AND_MEAN NOMINMAX _CRT_SECURE_NO_WARNINGS)
 endif ()
 
+# Fetch dependencies
+include(FetchContent)
+
+set(DEPS)
+
+FetchContent_Declare(
+    imgui
+    GIT_REPOSITORY https://github.com/ocornut/imgui.git
+    GIT_TAG master
+)
+list(APPEND DEPS imgui)
+
+option (GLFW_BUILD_EXAMPLES "" OFF)
+option (GLFW_BUILD_TESTS "" OFF)
+option (GLFW_BUILD_DOCS "" OFF)
+option (GLFW_INSTALL "" OFF)
+
+FetchContent_Declare(
+    glfw
+    GIT_REPOSITORY https://github.com/glfw/glfw.git
+    GIT_TAG master
+)
+list(APPEND DEPS glfw)
+
+FetchContent_Declare(
+    cgltf
+    GIT_REPOSITORY https://github.com/jkuhlmann/cgltf.git
+    GIT_TAG master
+)
+list(APPEND DEPS cgltf)
+
+if(DEPS)
+    message("Downloading dependencies:")
+    message(STATUS "${DEPS} ...")
+    FetchContent_MakeAvailable(${DEPS})
+endif()
+
 # External/Imgui
-file (GLOB IMGUI_SOURCE "External/Imgui/*.cpp" "External/Imgui/*.h")
+file (GLOB IMGUI_SOURCE "${imgui_SOURCE_DIR}/*.cpp" "${imgui_SOURCE_DIR}/*.h")
 source_group ("" FILES ${IMGUI_SOURCE})
 add_library (imgui STATIC ${IMGUI_SOURCE})
 target_compile_definitions (imgui PRIVATE ${COMPILE_DEFINITIONS})
@@ -88,11 +125,6 @@ option (NRI_ENABLE_NVTX_SUPPORT "" ON)
 add_subdirectory ("External/NRI")
 
 # External/Glfw
-option (GLFW_BUILD_EXAMPLES "" OFF)
-option (GLFW_BUILD_TESTS "" OFF)
-option (GLFW_BUILD_DOCS "" OFF)
-option (GLFW_INSTALL "" OFF)
-add_subdirectory ("External/Glfw")
 set_property (TARGET glfw PROPERTY FOLDER "${PROJECT_FOLDER}/External")
 set_property (TARGET update_mappings PROPERTY FOLDER "${PROJECT_FOLDER}/External")
 
@@ -111,7 +143,7 @@ endif ()
 
 file (GLOB FRAMEWORK_SOURCE "Source/*.cpp" "Source/*.h")
 source_group ("Source" FILES ${FRAMEWORK_SOURCE})
-file (GLOB FRAMEWORK_HEADERS "Include/*.hpp" "Include/*.h" "External/Cgltf/cgltf.h")
+file (GLOB FRAMEWORK_HEADERS "Include/*.hpp" "Include/*.h" "${cgltf_SOURCE_DIR}/cgltf.h")
 source_group ("Include" FILES ${FRAMEWORK_HEADERS})
 add_library (${PROJECT_NAME} STATIC ${FRAMEWORK_SOURCE} ${FRAMEWORK_HEADERS} ${ML_HEADERS})
 target_link_libraries (${PROJECT_NAME} PRIVATE imgui detex glfw)
@@ -122,7 +154,8 @@ elseif (UNIX)
     target_link_libraries (${PROJECT_NAME} PRIVATE ${CMAKE_DL_LIBS} pthread X11)
 endif ()
 
-target_include_directories (${PROJECT_NAME} PRIVATE "Source" "Include" "External" "External/NRI/Include")
+target_include_directories (${PROJECT_NAME} PRIVATE "Source" "${cgltf_SOURCE_DIR}")
+target_include_directories (${PROJECT_NAME} PUBLIC "Include" "External" "External/NRI/Include" "${glfw_SOURCE_DIR}/include" "${imgui_SOURCE_DIR}")
 target_compile_definitions (${PROJECT_NAME} PRIVATE ${COMPILE_DEFINITIONS})
 target_compile_options (${PROJECT_NAME} PRIVATE ${COMPILE_OPTIONS})
 set_property (TARGET ${PROJECT_NAME} PROPERTY FOLDER ${PROJECT_FOLDER})

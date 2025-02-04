@@ -16,7 +16,7 @@
 #else
 #    error "Unknown platform"
 #endif
-#include "Glfw/include/GLFW/glfw3native.h"
+#include "GLFW/glfw3native.h"
 
 #if defined(__linux__) || defined(__APPLE__)
 #    include <csignal>

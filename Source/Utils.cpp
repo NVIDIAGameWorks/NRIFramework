@@ -8,7 +8,7 @@
 #include "Detex/detex.h"
 
 #define CGLTF_IMPLEMENTATION
-#include "Cgltf/cgltf.h"
+#include "cgltf.h"
 
 #include "Detex/stb_image.h"
 
