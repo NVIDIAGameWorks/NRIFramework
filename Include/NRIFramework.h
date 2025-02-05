@@ -4,7 +4,7 @@
 
 #define NRI_FRAMEWORK_VERSION_MAJOR 0
 #define NRI_FRAMEWORK_VERSION_MINOR 15
-#define NRI_FRAMEWORK_VERSION_DATE "4 February 2025"
+#define NRI_FRAMEWORK_VERSION_DATE "5 February 2025"
 #define NRI_FRAMEWORK 1
 
 #include <array>
@@ -31,8 +31,8 @@
 // 3rd party
 #include "CmdLine.h" // https://github.com/tanakh/cmdline
 
-#include "MathLib/ml.h"
-#include "MathLib/ml.hlsli"
+#include "ml.h"
+#include "ml.hlsli"
 
 // NRI framework
 #include "Camera.h"
