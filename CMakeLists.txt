@@ -24,7 +24,7 @@ set(VERSION_MAJOR ${CMAKE_MATCH_1})
 string(REGEX MATCH "NRI_FRAMEWORK_VERSION_MINOR ([0-9]*)" _ ${ver_h})
 set(VERSION_MINOR ${CMAKE_MATCH_1})
 
-message("NRIFramework v${VERSION_MAJOR}.${VERSION_MINOR}")
+message("NRI framework v${VERSION_MAJOR}.${VERSION_MINOR}")
 project(NRIFramework LANGUAGES C CXX)
 
 # Globals?
