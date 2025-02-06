@@ -53,9 +53,7 @@ if(WIN32)
     set(COMPILE_DEFINITIONS WIN32_LEAN_AND_MEAN NOMINMAX _CRT_SECURE_NO_WARNINGS)
 endif()
 
-# =============================================================================================================
-# Dependencies: download
-# =============================================================================================================
+# Download dependencies
 set(DEPS)
 
 # ImGui
