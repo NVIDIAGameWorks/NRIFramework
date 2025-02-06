@@ -211,7 +211,7 @@ set(SHADERMAKE_GENERAL_ARGS
 )
 
 if(WIN32)
-    add_custom_target(${PROJECT_NAME}_Shaders ALL
+    add_custom_target(${PROJECT_NAME}Shaders ALL
         COMMAND ShaderMake ${SHADERMAKE_GENERAL_ARGS} -p DXBC --compiler "${FXC_PATH}"
         COMMAND ShaderMake ${SHADERMAKE_GENERAL_ARGS} -p DXIL --compiler "${DXC_PATH}"
         COMMAND ShaderMake ${SHADERMAKE_GENERAL_ARGS} -p SPIRV --compiler "${DXC_SPIRV_PATH}"
@@ -221,7 +221,7 @@ if(WIN32)
         SOURCES ${SHADERS}
     )
 else()
-    add_custom_target(${PROJECT_NAME}_Shaders ALL
+    add_custom_target(${PROJECT_NAME}Shaders ALL
         COMMAND ShaderMake ${SHADERMAKE_GENERAL_ARGS} -p SPIRV --compiler "${DXC_SPIRV_PATH}"
         DEPENDS ShaderMake
         WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
@@ -230,5 +230,5 @@ else()
     )
 endif()
 
-set_property(TARGET ${PROJECT_NAME}_Shaders PROPERTY FOLDER "${PROJECT_NAME}")
-add_dependencies(${PROJECT_NAME} ${PROJECT_NAME}_Shaders)
+set_property(TARGET ${PROJECT_NAME}Shaders PROPERTY FOLDER "${PROJECT_NAME}")
+add_dependencies(${PROJECT_NAME} ${PROJECT_NAME}Shaders)
