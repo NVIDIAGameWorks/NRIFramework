@@ -123,8 +123,6 @@ target_compile_definitions(detex PRIVATE ${COMPILE_DEFINITIONS})
 set_property(TARGET detex PROPERTY FOLDER "${PROJECT_NAME}")
 
 # External/NRI
-option(NRI_ENABLE_AGILITY_SDK_SUPPORT "" OFF)
-option(NRI_ENABLE_NVTX_SUPPORT "" ON)
 add_subdirectory("External/NRI")
 
 # External/MathLib
