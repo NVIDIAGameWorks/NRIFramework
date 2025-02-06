@@ -201,13 +201,14 @@ file(GLOB_RECURSE SHADERS "Shaders/*.hlsl")
 set_source_files_properties(${SHADERS} PROPERTIES VS_TOOL_OVERRIDE "None")
 
 set(SHADERMAKE_GENERAL_ARGS
-    --useAPI --binary --flatten --stripReflection --WX
+    --useAPI --flatten --stripReflection --WX
+    --sRegShift 100 --tRegShift 200 --bRegShift 300 --uRegShift 400
+    --binary
     --sourceDir "Shaders"
     -c Shaders.cfg
     -o "${NRIF_SHADERS_PATH}"
     -I "External/NRI/Include"
     -I "External/MathLib"
-    --sRegShift 100 --tRegShift 200 --bRegShift 300 --uRegShift 400
 )
 
 if(WIN32)
