@@ -102,7 +102,7 @@ if(NOT TARGET ShaderMake)
 endif()
 
 if(DEPS)
-    message("Downloading dependencies:")
+    message("NRI framework: downloading dependencies:")
     message(STATUS "${DEPS} ...")
     FetchContent_MakeAvailable(${DEPS})
 endif()
