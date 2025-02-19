@@ -27,6 +27,7 @@
 #include "Extensions/NRIResourceAllocator.h"
 #include "Extensions/NRIStreamer.h"
 #include "Extensions/NRISwapChain.h"
+#include "Extensions/NRIUpscaler.h"
 
 // 3rd party
 #include "CmdLine.h" // https://github.com/tanakh/cmdline

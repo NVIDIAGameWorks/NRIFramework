@@ -192,7 +192,7 @@ if("${NRIF_SHADERS_PATH}" STREQUAL "")
     set(NRIF_SHADERS_PATH "${CMAKE_CURRENT_SOURCE_DIR}/_Shaders")
 endif()
 
-message("NRI framework shaders output path: '${NRIF_SHADERS_PATH}'")
+message("NRI framework shaders path: '${NRIF_SHADERS_PATH}'")
 
 # Shaders
 file(GLOB_RECURSE SHADERS "Shaders/*.hlsl")
@@ -203,7 +203,8 @@ set(SHADERMAKE_GENERAL_ARGS
     --sRegShift 100 --tRegShift 200 --bRegShift 300 --uRegShift 400
     --binary
     --sourceDir "Shaders"
-    -c Shaders.cfg
+    --ignoreConfigDir
+    -c "Shaders/Shaders.cfg"
     -o "${NRIF_SHADERS_PATH}"
     -I "External/NRI/Include"
     -I "External/MathLib"
